@@ -1,5 +1,9 @@
 # unimlsurv
 
+[English](README.md) | **简体中文**
+
+[![R-CMD-check](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml)
+
 用 `mlr3` 做生存分析，结构和 [`uniml`](https://github.com/zhengyangszy/uniml) 完全一致。
 
 `unimlsurv` 是 `uniml` 的生存分析版本。分层（规格、数据、任务、学习器、调参、指标、

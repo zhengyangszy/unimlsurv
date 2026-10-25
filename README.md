@@ -1,5 +1,9 @@
 # unimlsurv
 
+**English** | [简体中文](README.zh.md)
+
+[![R-CMD-check](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml)
+
 Survival analysis with `mlr3`, in the same shape as [`uniml`](https://github.com/zhengyangszy/uniml).
 
 `unimlsurv` is the time-to-event sibling of `uniml`. It keeps the layering —
