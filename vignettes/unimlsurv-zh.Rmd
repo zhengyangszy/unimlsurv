@@ -1,0 +1,220 @@
+---
+title: "用 unimlsurv 做生存分析"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{用 unimlsurv 做生存分析}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.5
+)
+suppressPackageStartupMessages({
+  library(unimlsurv)
+  library(mlr3)
+})
+```
+
+`unimlsurv` 是 `uniml` 的生存分析版本。分层结构（规格、数据、任务、学习器、调参、
+指标、绘图、工作流）和 `uniml` 完全一致，所以会用一个就会用另一个。变的是结局，
+因此"什么算对"也跟着变。
+
+本篇一直用模拟队列，因为模拟器知道真实答案，每个数字都能和生成它的模型对上。
+
+## 生存结局是什么
+
+两列，不是一列：
+
+* **随访时间**：病人被观察了多久；
+* **状态**：`1` 表示在该时间点发生了事件，`0` 表示在该时间点删失。
+
+删失是生存统计和分类统计不同的根本原因。一个在 10 个月删失的病人，既不是"活过
+10 个月"，也不是"10 个月时死亡"。本包里的每个指标要么把删失病人从无法判断的比较
+里排除（C 指数），要么用删失生存概率的倒数给他们加权（Brier、时依 AUC、校准、
+决策曲线）。
+
+```{r data}
+data <- sim_surv_data(n = 400, seed = 2026)
+head(data, 4)
+```
+
+模拟器保存了真实的线性预测子，所以可以问"最好的答案长什么样"：
+
+```{r truth}
+time_points <- c(12, 36, 60)
+truth <- sim_surv_truth(data, time_points)
+round(head(truth$survival, 3), 3)
+```
+
+## 先写规格
+
+`surv_spec()` 生成一个 `task_type = "survival"` 的 `uniml_spec`，并加上
+`survival` 区块。预处理、调参、学习器都用 `uniml` 的同名函数配置——因为它们
+本来就是同一批函数。
+
+```{r spec}
+spec <- surv_spec(
+  time = "time",
+  status = "status",
+  time_points = time_points
+)
+spec <- uniml::set_preprocess(spec, impute = "median_mode", scale = "zscore")
+spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
+spec
+```
+
+时间点由你自己定，包不会替你编。它们应该是临床上真正会问的时点，而不是为了凑整
+数。
+
+## 数据和任务
+
+```{r task}
+prepared <- as_surv_data(data, spec)
+prepared
+
+task <- make_surv_task(prepared, spec)
+task
+```
+
+`as_surv_data()` 会把时间或状态缺失的行删掉，而不是插补：插补出来的结局不是结局。
+特征可以缺失，那些在预处理阶段插补，而且只在训练集上拟合。
+
+## 一个一个看指标
+
+```{r metrics}
+learner <- mlr3::lrn("surv.coxph")
+fitted <- train_surv(task, learner)
+prediction <- fitted$predict(task)
+
+survival <- survival_matrix(prediction, time_points)
+risk <- survival_risk(prediction)
+
+metrics <- calc_surv_metrics(
+  prepared$time, prepared$status, risk, survival, time_points
+)
+metrics$overall
+metrics$by_time
+```
+
+怎么读这张表：
+
+* `cindex` 是 Harrell C 指数：随便挑两个病人，其中一人先发生事件，C 指数就是模型
+  把风险更高的分数给了那个人的概率。0.5 等于抛硬币。
+* `brier` 是在某个时点，预测生存概率与实际结局之差的平方，用删失概率倒数加权后的
+  平均值。
+* `auc` 是累积/动态时依 AUC：在某个时点之前发生事件的人，被给出更高风险的概率，
+  比的是"该时点之后仍无事件"的人。
+* `ibs` 是 Brier 分数在你给的时间点上积分。
+
+每一个都由测试钉在独立实现上：C 指数对 `survival::concordance()`，Brier 和 AUC 对
+`riskRegression::Score()`。AUC 还额外钉在本包自己画的 ROC 曲线下面积上，所以
+"表里的数"和"图上的线"不可能对不上。
+
+## 校准
+
+区分度问的是"谁病得更重"，校准问的是"数字对不对"。一个模型可以排序完全正确，
+却告诉每个病人"你活下来的机会 90%"。
+
+```{r calibration}
+calibration <- surv_calibration_curves(
+  prepared$time, prepared$status, survival, time_points
+)
+calibration$summary
+head(calibration$table, 4)
+```
+
+`ici` 是积分校准指数：在每个预测分组内，预测值与 Kaplan-Meier 估计之差的绝对值，
+按病人数加权平均。分组只看预测值，绝不看结局。
+
+```{r calibration-plot, fig.cap = "各时间点的预测生存率与 Kaplan-Meier 估计。"}
+plot_surv_calibration(calibration$table)
+```
+
+## 决策曲线
+
+一个模型只有真的比"全都干预"和"都不干预"更好的时候才有用。
+
+```{r dca}
+dca <- surv_dca_curves(prepared$time, prepared$status, survival, time_points)
+plot_surv_dca(dca)
+```
+
+净获益用同样的删失倒数加权，所以在时点之前删失的病人不会被当成"确定没事件"。
+
+## 随时间的区分度
+
+```{r km, fig.cap = "按性别分组的 Kaplan-Meier 曲线。"}
+plot_surv_km(data, spec, group = "sex")
+```
+
+Kaplan-Meier 曲线给的是粗略印象；模型的价值在于协变量带来的分离度。
+
+## 完整工作流
+
+`run_surv_workflow()` 跑的是 `uniml` 共享的 engine——和二分类型工作流同一份
+预处理、调参、预测代码——再用生存指标打分。验证集负责选模型，测试集和外部队列
+只负责报告。
+
+```{r workflow}
+set.seed(42)
+index <- sample.int(nrow(data))
+result <- run_surv_workflow(
+  spec,
+  train = data[index[1:280], ],
+  validation = data[index[281:340], ],
+  test = data[index[341:400], ]
+)
+
+result$metrics[, c("model", "set", "cindex", "ibs", "brier_36")]
+result$ranking
+```
+
+`rpart` 只报告 C 指数，这不是 bug：`surv.rpart` 只能给风险分数，给不出生存概率，
+所以不能问它要 Brier。包会把这件事写进 `result$meta$notes`，而不是悄悄填一个数。
+
+```{r notes}
+result$meta$notes
+```
+
+预测新病人用的是拟合好的预处理器和拟合好的学习器，绝不会在新数据上重新拟合：
+
+```{r predict}
+newdata <- data[index[341:350], ]
+predict_surv(result, newdata, model = "coxph")
+```
+
+`model = "best"` 会取排名第一的模型，这里正好是 `rpart`，而它给不出生存概率。
+包会直接报错并列出能给出概率的模型，而不是悄悄换成你没点的那个：
+
+```{r predict-best, error = TRUE}
+predict_surv(result, newdata)
+```
+
+## 导出结果
+
+结果本身就是 `uniml_result`，所以导出布局和 `uniml` 一样：
+
+```{r export, eval = FALSE}
+uniml::export_results(result, dir = tempfile("unimlsurv-"))
+```
+
+## 刻意没做的部分
+
+* **竞争风险。** 死于其他原因不是删失，而是发生了另一类事件。这改变的是估计量本身，
+  不只是实现，所以不在本包范围内。
+* **Uno 的 IPCW C 指数。** 它和 Harrell C 是两个不同的估计量，混着报会误导人；
+  本包只报 Harrell C。
+* **生存预测的 SHAP。** 对一个函数值预测做 Shapley 分解仍是研究问题。分类的 SHAP
+  在 `uniml` 里。
+* **用 Brier 调参。** 逆概率权重依赖训练数据的删失分布，用它调参等于拿不同数据上
+  算出的数互相比。调参用 C 指数。
+
+每个统计量对应的文献见
+`system.file("REFERENCES.md", package = "unimlsurv")`。

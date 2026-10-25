@@ -1,0 +1,27 @@
+citHeader("To cite unimlsurv in publications use:")
+
+bibentry(
+  bibtype = "Article",
+  title = "mlr3proba: an R package for machine learning in survival analysis",
+  author = personList(
+    as.person("Raphael Sonabend"),
+    as.person("Patrick Kirchner"),
+    as.person("Alessandra Bender"),
+    as.person("Florian Bender"),
+    as.person("Andreas Bender")
+  ),
+  year = "2021",
+  journal = "Bioinformatics",
+  volume = "37",
+  number = "17",
+  pages = "2789-2791",
+  doi = "10.1093/bioinformatics/btab039"
+)
+
+bibentry(
+  bibtype = "Manual",
+  title = "unimlsurv: Survival Analysis Modelling with mlr3",
+  author = person("Steve", "Shi"),
+  year = "2026",
+  note = "R package version 0.1.0"
+)
