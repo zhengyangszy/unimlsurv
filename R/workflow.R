@@ -151,10 +151,19 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
     learners = learners
   )
   if (length(engine$states) == 0L) {
-    .abort(paste(
-      "No model could be fitted.",
-      "Check `engine$failures` by running `uniml::workflow_engine()` yourself."
-    ))
+    failures <- .surv_failure_table(engine$failures)
+    detail <- if (nrow(failures) == 0L) {
+      "No failure was logged, so the problem is upstream of the model loop."
+    } else {
+      paste0(
+        "\n  ",
+        paste(
+          sprintf("%s [%s]: %s", failures$model, failures$stage, failures$message),
+          collapse = "\n  "
+        )
+      )
+    }
+    .abort(paste0("No model could be fitted.", detail))
   }
 
   sets <- engine$prepared
