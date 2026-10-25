@@ -152,6 +152,24 @@ test_that("the learner registry is honest about capabilities", {
   expect_false(resolve_surv_learners("kaplan", tune = TRUE)$kaplan$tune)
 })
 
+test_that("a survival result exports with the uniml layout", {
+  split <- workflow_data()
+  result <- run_surv_workflow(workflow_spec(), split$train, split$validation)
+  dir <- tempfile("unimlsurv-export-")
+  on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+
+  exported <- uniml::export_results(result, dir = dir)
+  files <- basename(exported$files)
+  expect_true("metrics_validation.csv" %in% files)
+  expect_true("leaderboard.csv" %in% files)
+  expect_true("result.rds" %in% files)
+  path <- file.path(exported$dir, "performance", "metrics_validation.csv")
+  expect_true(file.exists(path))
+  written <- utils::read.csv(path)
+  expect_true(all(c("model", "set", "cindex") %in% names(written)))
+  expect_identical(unique(written$set), "validation")
+})
+
 test_that("workflow inputs are validated", {
   split <- workflow_data()
   spec <- workflow_spec()

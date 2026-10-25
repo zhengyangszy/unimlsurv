@@ -362,6 +362,9 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
   rownames(out) <- NULL
   list(
     method = "kaplan_meier_groups",
+    # Survival calibration has no per-model fitted parameters; the empty entries
+    # keep the shape that `uniml::export_results()` expects.
+    parameters = stats::setNames(rep(list(list()), length(models)), models),
     models = models,
     set = select_on,
     metrics = out
