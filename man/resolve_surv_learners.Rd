@@ -14,11 +14,11 @@ of \code{mlr3} survival learners.}
 }
 \value{
 A named list of learner specifications, each with \code{key}, \code{learner},
-\code{search_space}, and \code{tune}.
+\code{search_space}, \code{tune}, and \code{distr}.
 }
 \description{
 Resolve survival learners into a workflow-ready list
 }
 \examples{
-names(resolve_surv_learners("coxph", tune = FALSE))
+names(resolve_surv_learners(c("coxph", "kaplan"), tune = FALSE))
 }

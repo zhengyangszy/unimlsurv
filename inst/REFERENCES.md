@@ -118,6 +118,34 @@ exponential censoring and stores the true linear predictor, so every metric can
 be checked against the truth rather than against another implementation of the
 same assumption.
 
+## Confidence intervals
+
+Efron B, Tibshirani RJ (1993). *An Introduction to the Bootstrap*. Chapman &
+Hall. doi:10.1201/9780429246593
+
+*What the package does*: `surv_ci()` resamples patients with replacement and
+reports percentile intervals for the concordance index, the integrated Brier
+score, and every per-time Brier score and AUC. A resample that cannot estimate a
+time point (no cases, no controls, or no events) contributes `NA` and is counted
+in `n_effective`, so an interval is never quietly built from a handful of
+resamples.
+
+## Model explanation
+
+Lundberg SM, Lee SI (2017). A unified approach to interpreting model predictions.
+*Advances in Neural Information Processing Systems*, 30.
+
+Covert I, Lee SI (2021). Improving KernelSHAP: practical Shapley value estimation
+using linear regression. *Proceedings of AISTATS*, PMLR 130, 3457-3465.
+
+*What the package does*: `surv_shap()` computes Kernel SHAP values for a fitted
+survival model. Because a survival prediction is a function, the quantity being
+explained has to be named: the risk score when `time_point` is `NULL`, and the
+predicted survival probability at that horizon otherwise. Kernel SHAP is used
+rather than a tree-specific shortcut so the estimator does not change with the
+learner. Explanations are properties of the model, not causal effects; the
+vignette says so in the same words a paper should.
+
 ## Validation and reporting
 
 Steyerberg EW (2019). *Clinical Prediction Models: A Practical Approach to

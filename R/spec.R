@@ -69,6 +69,11 @@ surv_spec <- function(time = "time", status = "status",
     time_points = sort(unique(as.numeric(time_points))),
     censoring_model = censoring_model
   )
+  # `uniml`'s feature selection screens on the outcome column, which for a
+  # survival model is the event indicator: it would ignore the time entirely and
+  # rank features by a binary outcome. Survival selection is therefore off by
+  # default; every feature is used unless the user selects them.
+  spec$selection$methods <- character()
   class(spec) <- c("unimlsurv_spec", class(spec))
   validate_surv_spec(spec)
   spec

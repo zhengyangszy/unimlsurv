@@ -19,7 +19,8 @@ surv_register_learner(spec, key, learner, search_space = NULL)
 The updated specification.
 }
 \description{
-Register a survival learner under a key
+Use this when you want a learner that is not in the registry, or when you want
+a search space for one of the discovered learners that ships without one.
 }
 \examples{
 spec <- surv_spec(time = "time", status = "status")

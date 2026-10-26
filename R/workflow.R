@@ -52,6 +52,10 @@
       }
       list(survival = survival, risk = risk)
     },
+    features = function(data, spec) {
+      block <- spec$survival
+      setdiff(names(data), c(block$time, block$status))
+    },
     metric_names = function(spec) {
       c("cindex", "ibs", "brier", "auc")
     },
@@ -97,6 +101,8 @@
 #' @param validation Validation data frame; used for model selection.
 #' @param test Optional test data frame; reporting-only.
 #' @param external Optional external data frame; reporting-only.
+#' @param ci_R Bootstrap resamples for the confidence intervals on the comparison
+#'   set. Set to `0` to skip them.
 #'
 #' @return A `uniml_result` with `metrics` (one row per model and set), `dca`
 #'   (time-point decision curves on the comparison set), `ranking` (models ordered
@@ -126,8 +132,9 @@
 #' result$ranking
 #' }
 run_surv_workflow <- function(spec, train, validation, test = NULL,
-                              external = NULL) {
+                              external = NULL, ci_R = 200L) {
   validate_surv_spec(spec)
+  .assert_scalar_number(ci_R, "ci_R", integer = TRUE, min = 0)
   block <- spec$survival
   learners <- block$learners
   if (is.null(learners)) {
@@ -264,6 +271,11 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
     predictions, spec, select_on, names(engine$states)
   )
   dca <- .surv_workflow_dca(predictions, spec, select_on)
+  ci <- if (ci_R > 0L) {
+    .surv_workflow_ci(predictions, spec, select_on, as.integer(ci_R))
+  } else {
+    NULL
+  }
 
   uniml::assemble_result(
     data_info = list(
@@ -281,6 +293,7 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
     selection = engine$selection,
     tuning = engine$tuning,
     metrics = metrics,
+    ci = ci,
     calibration = calibration,
     dca = dca,
     ranking = ranking,
@@ -301,6 +314,46 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
     select_on = if (is.na(select_on)) "auto" else select_on,
     best_model_metric = "composite"
   )
+}
+
+.surv_workflow_ci <- function(predictions, spec, select_on, R) {
+  if (is.na(select_on)) {
+    return(NULL)
+  }
+  rows <- list()
+  for (entry in predictions) {
+    if (!identical(entry$set, select_on)) {
+      next
+    }
+    intervals <- tryCatch(
+      surv_ci(
+        entry$time,
+        entry$status,
+        entry$risk,
+        entry$survival,
+        spec$survival$time_points,
+        censoring = spec$survival$censoring_model,
+        R = R,
+        seed = spec$seed
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(intervals)) {
+      next
+    }
+    intervals$model <- entry$model
+    intervals$set <- entry$set
+    rows[[length(rows) + 1L]] <- intervals[, c(
+      "model", "set", "metric", "mean", "se", "lower", "upper",
+      "n_effective", "formatted"
+    )]
+  }
+  if (length(rows) == 0L) {
+    return(NULL)
+  }
+  out <- do.call(rbind, rows)
+  rownames(out) <- NULL
+  out
 }
 
 .surv_failure_table <- function(log) {

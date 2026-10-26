@@ -185,12 +185,12 @@ external sets report.
 ```{r workflow}
 set.seed(42)
 index <- sample.int(nrow(data))
-result <- run_surv_workflow(
-  spec,
-  train = data[index[1:280], ],
-  validation = data[index[281:340], ],
-  test = data[index[341:400], ]
-)
+train <- data[index[1:280], ]
+validation <- data[index[281:340], ]
+test <- data[index[341:400], ]
+
+result <- run_surv_workflow(spec, train = train, validation = validation,
+                            test = test)
 
 result$metrics[, c("model", "set", "cindex", "ibs", "brier_36")]
 result$ranking
@@ -203,6 +203,100 @@ says so in `result$meta$notes` instead of quietly filling in a number.
 ```{r notes}
 result$meta$notes
 ```
+
+## Confidence intervals
+
+Every number in the table above is a point estimate. The workflow bootstraps the
+comparison set for you; `surv_ci()` does the same thing on any prediction you
+already have.
+
+```{r ci}
+head(result$ci[, c("model", "metric", "mean", "lower", "upper", "n_effective")], 6)
+```
+
+Patients are resampled, not rows of a metric table. A resample that loses the
+cases or the controls a time point needs returns `NA` and is counted in
+`n_effective`, so a narrow interval can never come from a handful of lucky
+resamples.
+
+## Explaining the model
+
+A survival model does not predict one number, so a SHAP analysis has to say what
+it is explaining. `time_point = NULL` explains the risk score — the quantity the
+concordance index ranks, and the one the published survival SHAP examples
+explain. A time point explains the predicted survival probability at that horizon
+instead.
+
+```{r shap-risk}
+explained <- surv_shap(
+  result, validation, model = "coxph",
+  n_explain = 60, bg_n = 30, seed = 1
+)
+explained
+plot_surv_shap_beeswarm(explained)
+```
+
+```{r shap-time, fig.cap = "SHAP dependence for the predicted 36-unit survival."}
+explained_36 <- surv_shap(
+  result, validation, model = "coxph", time_point = 36,
+  n_explain = 60, bg_n = 30, seed = 1
+)
+plot_surv_shap_dependence(explained_36, "x1")
+```
+
+The two explanations are not interchangeable: a feature can raise the risk score
+and lower S(36) by different relative amounts, and the ranking of features can
+differ between them. Report which quantity you explained.
+
+```{r shap-importance, fig.cap = "SHAP importance for the risk score."}
+plot_surv_shap_importance(explained)
+```
+
+`plot_surv_shap_waterfall()` and `plot_surv_shap_force()` explain one patient at
+a time, which is what a case discussion needs.
+
+## Handing the model to someone else
+
+Subgroup analyses are not part of this package on purpose: which subgroups matter
+is a clinical decision, and a package that guesses is worse than one that does not.
+What the package does is hand over everything needed to do it properly.
+
+```{r save, eval = FALSE}
+path <- uniml::save_result(result, "model.rds")
+```
+
+The file holds the fitted learners, the fitted preprocessor, the selected
+features, and the specification. Whoever opens it can score any subset and use the
+same metric functions the workflow used:
+
+```{r subgroup, eval = FALSE}
+restored <- uniml::read_result("model.rds")
+older <- validation[validation$age > 50, ]
+scored <- predict_surv(restored, older)
+calc_surv_metrics(
+  older$time, older$status, scored$risk,
+  as.matrix(scored[, grep("^S_", names(scored))]),
+  restored$meta$time_points
+)
+```
+
+## Which learners are available
+
+`surv_learner_registry()` lists every `surv.*` learner the installed `mlr3`
+packages expose, with a short alias, whether it can produce survival
+probabilities, and whether it has a curated tuning search space.
+
+```{r registry}
+available <- surv_learner_registry(available_only = TRUE)
+available[, c("key", "mlr3_key", "distr", "tunable")]
+```
+
+```{r registry-count}
+nrow(surv_learner_registry())
+```
+
+A learner without a curated space is still usable, just fitted at its defaults;
+`surv_register_learner()` adds a search space when you want to tune it.
 
 Predicting new patients uses the fitted preprocessor and the fitted learner, and
 never refits anything on the new data:
@@ -235,8 +329,9 @@ uniml::export_results(result, dir = tempfile("unimlsurv-"))
   implementation, so it is out of scope here.
 * **Uno's IPCW C-index.** It is a different estimand from Harrell's C and the
   two should not be confused; only Harrell's C is reported.
-* **SHAP for survival predictions.** Shapley values for a function-valued
-  prediction are a research topic. `uniml` covers SHAP for classification.
+* **Subgroup analyses.** Which subgroups matter is a clinical decision, not a
+  statistical default. The package gives you a saved model and a scorer instead of
+  inventing the groups.
 * **Tuning on the Brier score.** The inverse-probability weights depend on the
   censoring distribution of the data the model was fitted on, so tuning models on
   it would compare numbers computed on different data. Tuning uses the

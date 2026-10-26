@@ -4,20 +4,37 @@
 \alias{surv_learner_registry}
 \title{Available survival learners}
 \usage{
-surv_learner_registry(available_only = FALSE)
+surv_learner_registry(available_only = FALSE, curated_only = FALSE)
 }
 \arguments{
-\item{available_only}{Whether to keep only the learners whose package is
-installed.}
+\item{available_only}{Whether to keep only the learners that can be built in
+this session.}
+
+\item{curated_only}{Whether to keep only the curated entries.}
 }
 \value{
-A data frame with \code{key}, \code{label}, \code{package}, \code{available}, and
-\code{tunable}.
+A data frame with \code{key}, \code{label}, \code{mlr3_key}, \code{package}, \code{available},
+\code{distr}, and \code{tunable}.
 }
 \description{
-Lists the learner keys that \code{\link[=surv_set_learners]{surv_set_learners()}} understands, together with
-the package each one needs and whether it has a tuning search space.
+Everything \code{mlr3} exposes as a \verb{surv.*} learner, with a short alias you can pass
+to \code{\link[=surv_set_learners]{surv_set_learners()}}. The first block is curated: it has a readable label
+and a tuning search space. The rest is discovered at run time and is fitted at
+its defaults unless you register a search space with
+\code{\link[=surv_register_learner]{surv_register_learner()}}.
+}
+\details{
+\code{distr} tells you whether the learner can produce survival probabilities. A
+learner with \code{distr = FALSE} can only give a risk score, so it reports a
+concordance index and nothing else.
 }
 \examples{
-head(surv_learner_registry())
+registry <- surv_learner_registry()
+sum(registry$available)
+subset(registry, distr, select = c(key, mlr3_key))[1:5, ]
+}
+\references{
+Sonabend R, Kirchner P, Bender A, et al. (2021). mlr3proba: an R package for
+machine learning in survival analysis. \emph{Bioinformatics}, 37(17), 2789-2791.
+doi:10.1093/bioinformatics/btab039
 }

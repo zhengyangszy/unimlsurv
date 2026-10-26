@@ -1,3 +1,49 @@
+# unimlsurv 0.2.0
+
+Three things a survival model report needs and did not have: intervals, model
+interpretation, and the full learner list.
+
+## Confidence intervals
+
+* New `surv_ci()` bootstraps the concordance index, the integrated Brier score,
+  and every per-time Brier score and time-dependent AUC, resampling patients.
+  Resamples that cannot estimate a time point return `NA` and are counted in
+  `n_effective` rather than silently dropping out.
+* `run_surv_workflow()` gains `ci_R` (default 200) and reports the intervals for
+  the comparison set in `result$ci`. `ci_R = 0` skips them.
+
+## SHAP
+
+* New `surv_shap()` explains a fitted survival model with Kernel SHAP. The
+  quantity being explained has to be named, because a survival prediction is not
+  a single number: leave `time_point = NULL` to explain the risk score the
+  concordance index ranks, or pass a time point to explain S(t).
+* `plot_surv_shap_importance()`, `plot_surv_shap_beeswarm()`,
+  `plot_surv_shap_dependence()`, `plot_surv_shap_waterfall()`, and
+  `plot_surv_shap_force()` draw them on `uniml`'s SHAP figures.
+* Kernel SHAP rather than a tree shortcut, because survival learners are not all
+  tree ensembles and the estimator should not change with the learner.
+
+## Every survival learner mlr3 has
+
+* `surv_learner_registry()` now lists all 29 `surv.*` learners that `mlr3`,
+  `mlr3proba`, and `mlr3extralearners` expose in the session, not just a curated
+  handful. Twelve of them keep a short alias and a tuning search space; the rest
+  are discovered at run time and fitted at their defaults unless a search space is
+  registered with `surv_register_learner()`.
+* `available` now reflects whether the learner's own package is installed, rather
+  than whether an object could be constructed, so a missing optional package is
+  reported when the learner is chosen instead of when it is trained.
+* `distr` reports whether the learner can produce survival probabilities; a
+  risk-only learner reports a concordance index and nothing else.
+
+## Feature selection is off by default
+
+* `surv_spec()` no longer inherits `uniml`'s `lasso` selection. That selector
+  screens features against the outcome column, which for a survival model is the
+  event indicator: it would ignore the time entirely. Every feature is used unless
+  the user selects them.
+
 # unimlsurv 0.1.0
 
 First release. The survival stack is implemented end to end, on top of the

@@ -43,10 +43,51 @@ result$ranking
 | Time-dependent AUC | `surv_auc()` | cumulative/dynamic AUC, IPCW | `riskRegression::Score()`; the area under `surv_roc_curve()` |
 | Calibration at `t` | `surv_calibration()` | predicted vs Kaplan-Meier, by prediction group | definition of ICI |
 | Net benefit at `t` | `surv_dca()` | IPCW net benefit vs treat-all / treat-none | definition of net benefit |
+| Confidence intervals | `surv_ci()` | percentile bootstrap over patients | the point estimate it brackets |
 
 Every statistic is pinned by a test against an independent implementation, and
 every one is documented with the paper it follows. See
 `system.file("REFERENCES.md", package = "unimlsurv")`.
+
+## Explaining a survival model
+
+A survival prediction is not one number, so `surv_shap()` makes you say which
+quantity you are explaining: the risk score the C-index ranks
+(`time_point = NULL`), or the predicted survival probability at a horizon
+(`time_point = 36`). The two are not interchangeable.
+
+```r
+explained <- surv_shap(result, validation, model = "coxph")
+plot_surv_shap_beeswarm(explained)
+plot_surv_shap_dependence(explained, "x1")
+
+explained_36 <- surv_shap(result, validation, model = "coxph", time_point = 36)
+plot_surv_shap_importance(explained_36)
+```
+
+Kernel SHAP is used because survival learners are not all tree ensembles; a tree
+shortcut would silently change the estimator depending on the model.
+
+## Handing the model to someone else
+
+Subgroup analyses are deliberately out of scope: which subgroups matter is a
+clinical decision. `uniml::save_result()` writes the fitted learners, the fitted
+preprocessor, the selected features, and the specification to one file, so whoever
+opens it can score any subset and use the same metric functions.
+
+```r
+path <- uniml::save_result(result, "model.rds")
+restored <- uniml::read_result(path)
+scored <- predict_surv(restored, older_patients)
+```
+
+## Every survival learner mlr3 has
+
+`surv_learner_registry()` lists all 29 `surv.*` learners the installed `mlr3`
+packages expose, with a short alias, whether it can produce survival
+probabilities, and whether it carries a curated tuning space. Twelve have a
+curated alias and search space; the rest are usable at their defaults.
+
 
 ## What it deliberately does not do
 
@@ -54,8 +95,9 @@ every one is documented with the paper it follows. See
   type, not a censoring. That changes the estimand, so it is out of scope.
 * **Uno's IPCW C-index.** A different estimand from Harrell's C; reporting both
   under one name is how the literature gets confused. Only Harrell's C is here.
-* **SHAP for survival predictions.** Shapley values for a function-valued
-  prediction are a research topic.
+* **Subgroup analyses.** Which subgroups matter is a clinical decision, not a
+  statistical default. You get a saved model and a scorer instead of invented
+  groups.
 * **Tuning on the Brier score.** Its inverse-probability weights depend on the
   censoring distribution of the training data, so tuning on it would compare
   numbers computed on different data. Tuning uses the concordance index.

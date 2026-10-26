@@ -50,9 +50,19 @@
     .abort("`time` and `status` must have the same length.")
   }
   if (!is.null(survival)) {
-    .assert_numeric_vector(survival, "survival", min = 0, max = 1)
-    if (length(survival) != length(time)) {
-      .abort("`survival` and `time` must have the same length.")
+    if (is.matrix(survival)) {
+      if (nrow(survival) != length(time)) {
+        .abort("`survival` and `time` must have the same number of rows.")
+      }
+      values <- survival[is.finite(survival)]
+      if (length(values) > 0L && any(values < 0 | values > 1)) {
+        .abort("`survival` must contain probabilities in [0, 1].")
+      }
+    } else {
+      .assert_numeric_vector(survival, "survival", min = 0, max = 1)
+      if (length(survival) != length(time)) {
+        .abort("`survival` and `time` must have the same length.")
+      }
     }
   }
   if (!is.null(risk)) {

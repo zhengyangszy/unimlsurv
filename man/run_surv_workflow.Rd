@@ -4,7 +4,14 @@
 \alias{run_surv_workflow}
 \title{Run a survival workflow}
 \usage{
-run_surv_workflow(spec, train, validation, test = NULL, external = NULL)
+run_surv_workflow(
+  spec,
+  train,
+  validation,
+  test = NULL,
+  external = NULL,
+  ci_R = 200L
+)
 }
 \arguments{
 \item{spec}{A specification created by \code{\link[=surv_spec]{surv_spec()}}.}
@@ -16,6 +23,9 @@ run_surv_workflow(spec, train, validation, test = NULL, external = NULL)
 \item{test}{Optional test data frame; reporting-only.}
 
 \item{external}{Optional external data frame; reporting-only.}
+
+\item{ci_R}{Bootstrap resamples for the confidence intervals on the comparison
+set. Set to \code{0} to skip them.}
 }
 \value{
 A \code{uniml_result} with \code{metrics} (one row per model and set), \code{dca}

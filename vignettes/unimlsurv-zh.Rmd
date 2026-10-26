@@ -165,12 +165,12 @@ Kaplan-Meier 曲线给的是粗略印象；模型的价值在于协变量带来�
 ```{r workflow}
 set.seed(42)
 index <- sample.int(nrow(data))
-result <- run_surv_workflow(
-  spec,
-  train = data[index[1:280], ],
-  validation = data[index[281:340], ],
-  test = data[index[341:400], ]
-)
+train <- data[index[1:280], ]
+validation <- data[index[281:340], ]
+test <- data[index[341:400], ]
+
+result <- run_surv_workflow(spec, train = train, validation = validation,
+                            test = test)
 
 result$metrics[, c("model", "set", "cindex", "ibs", "brier_36")]
 result$ranking
@@ -182,6 +182,90 @@ result$ranking
 ```{r notes}
 result$meta$notes
 ```
+
+## 置信区间
+
+上表里每个数都是点估计。工作流会替你对验证集做 bootstrap；`surv_ci()` 对你手上
+已有的任何一组预测做同样的事。
+
+```{r ci}
+head(result$ci[, c("model", "metric", "mean", "lower", "upper", "n_effective")], 6)
+```
+
+重抽样的是**病人**，不是指标表里的行。某次重抽样如果丢了该时间点所需的病例或对照，
+就记 `NA` 并计入 `n_effective`——所以一个很窄的区间不可能来自少数几次碰巧的重抽样。
+
+## 解释模型
+
+生存模型预测的不是一个数，所以做 SHAP 必须先说清楚解释的是什么。
+`time_point = NULL` 解释的是**风险评分**（C 指数排序的那个量，也是已发表的生存
+SHAP 例子解释的量）；给定时间点则解释该时点的**预测生存概率** S(t)。
+
+```{r shap-risk}
+explained <- surv_shap(
+  result, validation, model = "coxph",
+  n_explain = 60, bg_n = 30, seed = 1
+)
+explained
+plot_surv_shap_beeswarm(explained)
+```
+
+```{r shap-time, fig.cap = "36 时点预测生存率的 SHAP 依赖图。"}
+explained_36 <- surv_shap(
+  result, validation, model = "coxph", time_point = 36,
+  n_explain = 60, bg_n = 30, seed = 1
+)
+plot_surv_shap_dependence(explained_36, "x1")
+```
+
+这两种解释**不能互换**：同一个特征对风险评分和 S(36) 的推动幅度不同，特征的重要性
+排序也可能不同。报结果时要写清楚解释的是哪一个量。
+
+```{r shap-importance, fig.cap = "风险评分的 SHAP 重要性。"}
+plot_surv_shap_importance(explained)
+```
+
+`plot_surv_shap_waterfall()` 和 `plot_surv_shap_force()` 解释单个病人，用于个案讨论。
+
+## 把模型交给别人
+
+分层分析刻意不在本包范围内：哪些亚组有意义是临床决定，包不该替你猜。包做的是把
+做分层所需的东西完整交出去。
+
+```{r save, eval = FALSE}
+path <- uniml::save_result(result, "model.rds")
+```
+
+文件里含拟合好的学习器、拟合好的预处理器、选中的特征和规格。拿到它的人可以对任何
+子集打分，并用与工作流相同的指标函数：
+
+```{r subgroup, eval = FALSE}
+restored <- uniml::read_result("model.rds")
+older <- validation[validation$age > 50, ]
+scored <- predict_surv(restored, older)
+calc_surv_metrics(
+  older$time, older$status, scored$risk,
+  as.matrix(scored[, grep("^S_", names(scored))]),
+  restored$meta$time_points
+)
+```
+
+## 有哪些学习器可用
+
+`surv_learner_registry()` 列出当前安装的 `mlr3` 系列包暴露的**全部** `surv.*`
+学习器，连同短别名、能否给生存概率、有没有预置调参空间。
+
+```{r registry}
+available <- surv_learner_registry(available_only = TRUE)
+available[, c("key", "mlr3_key", "distr", "tunable")]
+```
+
+```{r registry-count}
+nrow(surv_learner_registry())
+```
+
+没有预置调参空间的学习器照样能用，只是用默认参数拟合；需要调参时用
+`surv_register_learner()` 给它加一个。
 
 预测新病人用的是拟合好的预处理器和拟合好的学习器，绝不会在新数据上重新拟合：
 
@@ -211,8 +295,8 @@ uniml::export_results(result, dir = tempfile("unimlsurv-"))
   不只是实现，所以不在本包范围内。
 * **Uno 的 IPCW C 指数。** 它和 Harrell C 是两个不同的估计量，混着报会误导人；
   本包只报 Harrell C。
-* **生存预测的 SHAP。** 对一个函数值预测做 Shapley 分解仍是研究问题。分类的 SHAP
-  在 `uniml` 里。
+* **亚组分析。** 哪些亚组有意义是临床决定，不是统计默认值。包给你一个存好的模型和
+  一个打分函数，而不是替你编组。
 * **用 Brier 调参。** 逆概率权重依赖训练数据的删失分布，用它调参等于拿不同数据上
   算出的数互相比。调参用 C 指数。
 

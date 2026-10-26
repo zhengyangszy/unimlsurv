@@ -42,9 +42,46 @@ result$ranking
 | 时依 AUC | `surv_auc()` | 累积/动态 AUC，IPCW | `riskRegression::Score()`；以及 `surv_roc_curve()` 曲线下面积 |
 | 时点校准 | `surv_calibration()` | 预测值 vs 分组内 Kaplan-Meier | ICI 定义 |
 | 时点净获益 | `surv_dca()` | IPCW 净获益，对照全干预/不干预 | 净获益定义 |
+| 置信区间 | `surv_ci()` | 按病人重抽样的百分位 bootstrap | 它所包围的点估计 |
 
 每个指标都有测试钉在独立实现上，每个都写明所依据的文献，见
 `system.file("REFERENCES.md", package = "unimlsurv")`。
+
+## 解释生存模型
+
+生存预测不是一个数，所以 `surv_shap()` 要求你说清楚解释的是哪个量：C 指数排序的
+**风险评分**（`time_point = NULL`），还是某个时点的**预测生存概率**
+（`time_point = 36`）。两者不能互换。
+
+```r
+explained <- surv_shap(result, validation, model = "coxph")
+plot_surv_shap_beeswarm(explained)
+plot_surv_shap_dependence(explained, "x1")
+
+explained_36 <- surv_shap(result, validation, model = "coxph", time_point = 36)
+plot_surv_shap_importance(explained_36)
+```
+
+用 Kernel SHAP 而不是树模型捷径：生存学习器不都是树集成，捷径会让估计量随模型变化。
+
+## 把模型交给别人
+
+亚组分析刻意不在范围内：哪些亚组有意义是临床决定。`uniml::save_result()` 把拟合好的
+学习器、预处理器、选中的特征和规格写进一个文件，拿到它的人可以对任何子集打分，并用
+同一套指标函数。
+
+```r
+path <- uniml::save_result(result, "model.rds")
+restored <- uniml::read_result(path)
+scored <- predict_surv(restored, older_patients)
+```
+
+## mlr3 能支持的生存学习器都在
+
+`surv_learner_registry()` 列出当前安装的 `mlr3` 系列包暴露的**全部 29 个** `surv.*`
+学习器，连同短别名、能否给生存概率、有没有预置调参空间。其中 12 个有别名和调参空间，
+其余用默认参数即可使用。
+
 
 ## 刻意没做的部分
 
@@ -52,7 +89,8 @@ result$ranking
   本包范围。
 * **Uno 的 IPCW C 指数。** 和 Harrell C 是两个不同的估计量，用同一个名字混着报，
   正是文献里最容易出错的地方。本包只报 Harrell C。
-* **生存预测的 SHAP。** 对函数值预测做 Shapley 分解仍是研究问题。
+* **亚组分析。** 哪些亚组有意义是临床决定，不是统计默认值。包给你一个存好的模型和
+  一个打分函数，而不是替你编组。
 * **用 Brier 调参。** 逆概率权重依赖训练数据的删失分布，用它调参等于拿不同数据
   上的数互相比。调参用 C 指数。
 * **`surv.rpart` 这类只给风险分数的学习器**可以跑，但只报 C 指数，其他指标留空，
