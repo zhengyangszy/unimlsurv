@@ -47,7 +47,7 @@ jobs:
             upgrade = "never",
             dependencies = TRUE
           )
-          needed <- "0.3.2"
+          needed <- "0.3.3"
           have <- as.character(packageVersion("uniml"))
           if (utils::compareVersion(have, needed) < 0) {
             stop(
