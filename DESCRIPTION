@@ -32,7 +32,7 @@ Imports:
     rlang,
     stats,
     utils,
-    uniml (>= 0.3.1)
+    uniml (>= 0.3.2)
 Suggests:
     kernelshap,
     shapviz,

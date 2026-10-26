@@ -47,6 +47,14 @@ jobs:
             upgrade = "never",
             dependencies = TRUE
           )
+          needed <- "0.3.2"
+          have <- as.character(packageVersion("uniml"))
+          if (utils::compareVersion(have, needed) < 0) {
+            stop(
+              "uniml ", have, " is too old for this check; ",
+              "the API this package calls was added in ", needed, "."
+            )
+          }
         shell: Rscript {0}
 
       - uses: r-lib/actions/setup-r-dependencies@v2
