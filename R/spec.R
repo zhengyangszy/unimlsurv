@@ -73,11 +73,36 @@ surv_spec <- function(time = "time", status = "status",
   # survival model is the event indicator: it would ignore the time entirely and
   # rank features by a binary outcome. Survival selection is therefore off by
   # default; every feature is used unless the user selects them.
-  spec$selection$methods <- "none"
+  spec$selection$methods <- .surv_no_selection()
   class(spec) <- c("unimlsurv_spec", class(spec))
   validate_surv_spec(spec)
   spec
 }
+
+# How to say "do not select" to the installed `uniml`. `"none"` is the documented
+# spelling from uniml 0.3.4; older versions reject it and want an empty vector
+# instead. Probing once is cheaper than pinning a version and having the two
+# packages disagree.
+.surv_no_selection <- function() {
+  cache <- .surv_cache
+  if (!is.null(cache$no_selection)) {
+    return(cache$no_selection)
+  }
+  supported <- tryCatch(
+    {
+      probe <- uniml::uniml_spec("binary", "y", "1")
+      probe$selection$methods <- "none"
+      uniml::validate_uniml_spec(probe)
+      TRUE
+    },
+    error = function(e) FALSE
+  )
+  value <- if (supported) "none" else character()
+  .surv_cache$no_selection <- value
+  value
+}
+
+.surv_cache <- new.env(parent = emptyenv())
 
 #' Validate a survival specification
 #'

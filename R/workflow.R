@@ -151,7 +151,7 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
   # outcome column, which here would be the event indicator, so they would ignore
   # the follow-up time entirely. Set it here as well as in `surv_spec()`, so a
   # specification assembled by hand or by another setter cannot reintroduce one.
-  spec$selection$methods <- "none"
+  spec$selection$methods <- .surv_no_selection()
 
   engine <- uniml::workflow_engine(
     spec,
