@@ -33,11 +33,15 @@ jobs:
           r-version: ${{ matrix.config.r }}
           use-public-rspm: true
 
-      # `mlr3proba`, `mlr3extralearners`, and `uniml` are not on CRAN, so they
-      # are installed from GitHub before the declared dependencies are resolved.
-      # The minimum `uniml` version is read from DESCRIPTION rather than copied
-      # here, because a stale copy silently installs an uniml this package cannot
-      # use.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::rcmdcheck
+          needs: check
+
+      # The GitHub-only dependencies go in *after* the resolver, and last, so
+      # nothing installs an older copy on top of them. Order matters here: the
+      # resolver used to overwrite `uniml` with a cached build, which made the
+      # check run against an API this package does not have.
       - name: Install GitHub-only dependencies
         run: |
           install.packages(c("remotes", "rcmdcheck", "pak"))
@@ -52,23 +56,35 @@ jobs:
             dependencies = TRUE
           )
           imports <- read.dcf("DESCRIPTION")[1, "Imports"]
-          needed <- sub(
-            ".*uniml \\(>= ([0-9.]+)\\).*", "\\1", imports
-          )
+          needed <- sub(".*uniml \\(>= ([0-9.]+)\\).*", "\\1", imports)
           have <- as.character(packageVersion("uniml"))
+          where <- dirname(find.package("uniml"))
+          cat("uniml", have, "from", where, "\n")
           if (utils::compareVersion(have, needed) < 0) {
             stop(
               "uniml ", have, " is too old for this check; ",
               "DESCRIPTION requires ", needed, "."
             )
           }
-          cat("uniml", have, "satisfies >=", needed, "\n")
+          # Behaviour, not just the version string: the no-selection path is what
+          # the survival workflow relies on.
+          probe <- tryCatch(
+            {
+              spec <- uniml::uniml_spec("binary", "y", "1")
+              spec$selection$methods <- character()
+              uniml::select_features(
+                data.frame(y = factor(c("a", "b")), x = c(1, 2)),
+                spec
+              )
+              TRUE
+            },
+            error = function(e) conditionMessage(e)
+          )
+          if (!isTRUE(probe)) {
+            stop("uniml cannot keep every feature: ", probe)
+          }
+          cat("uniml no-selection path ok\n")
         shell: Rscript {0}
-
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          extra-packages: any::rcmdcheck
-          needs: check
 
       - uses: r-lib/actions/check-r-package@v2
         with:
