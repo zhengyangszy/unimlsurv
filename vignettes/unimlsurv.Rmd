@@ -149,8 +149,25 @@ difference between the prediction and the Kaplan-Meier estimate inside each
 prediction group. Groups are formed from the predictions only, never from the
 outcome.
 
-```{r calibration-plot, fig.cap = "Time-point calibration against Kaplan-Meier survival."}
-plot_surv_calibration(calibration$table)
+The summary also carries `slope` and `intercept`, which answer a sharper
+question than the group table and do not depend on how the groups were cut:
+
+```{r calibration-slope}
+surv_calibration_slope(prepared$time, prepared$status, survival[, 1], time_points[1])
+```
+
+`surv_calibration_slope()` fits
+`cloglog(P(T <= t | x)) = intercept + slope * cloglog(1 - S(t | x))`. The
+complementary log-log link is the scale on which a proportional hazards model is
+additive, so a calibrated prediction gives a slope of 1 and an intercept of 0.
+Below 1 means the predictions are too extreme, above 1 means too timid, and a
+non-zero intercept means the whole curve sits too high or too low. Patients
+censored before the horizon carry no information about the binary outcome at that
+horizon and are dropped, and the rest are weighted by the inverse Kaplan-Meier
+censoring survival — the same weighting as the Brier score.
+
+```{r calibration-plot, fig.cap = "Time-point calibration against Kaplan-Meier survival, with the recalibration coefficients in the caption."}
+plot_surv_calibration(calibration)
 ```
 
 ## Decision curves

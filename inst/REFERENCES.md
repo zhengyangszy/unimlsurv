@@ -75,6 +75,21 @@ estimate at the time point. The summary is the ICI, the patient-weighted mean
 absolute difference. Groups are formed from the predictions, never from the
 outcome, so calibration cannot peek at what it is being judged on.
 
+van Houwelingen JC, le Cessie S (1990). Predictive value of statistical models.
+*Statistics in Medicine*, 9(11), 1303-1325. doi:10.1002/sim.4780091109
+
+Royston P, Altman DG (2013). External validation of a Cox prognostic model:
+principles and methods. *BMC Medical Research Methodology*, 13, 33.
+doi:10.1186/1471-2288-13-33
+
+*What the package does*: `surv_calibration_slope()` turns the calibration of one
+time point into a two-parameter model,
+`cloglog(P(T <= t | x)) = intercept + slope * cloglog(1 - S(t | x))`. The
+complementary log-log link is the scale on which proportional hazards is
+additive, so perfect calibration is `slope = 1`, `intercept = 0`. Patients
+censored before the horizon are dropped and the rest are weighted by the inverse
+Kaplan-Meier censoring survival, the same weighting as the Brier score.
+
 ## Decision curves
 
 Vickers AJ, Elkin EB (2006). Decision curve analysis: a novel method for

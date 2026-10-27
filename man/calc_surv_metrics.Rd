@@ -29,8 +29,10 @@ calc_surv_metrics(
 }
 \value{
 A list with \code{overall} (a one-row data frame), \code{by_time} (one row per
-time point), \code{row} (a wide one-row data frame with \code{cindex}, \code{ibs}, and one
-\verb{brier_<t>}/\verb{auc_<t>} column per time point), and \code{n}/\code{n_events}.
+time point, including the \code{calib_intercept} and \code{calib_slope} of
+\code{surv_calibration_slope()}), \code{row} (a wide one-row data frame with
+\code{cindex}, \code{ibs}, and one \verb{brier_<t>}, \verb{auc_<t>}, \verb{calib_intercept_<t>}, and
+\verb{calib_slope_<t>} column per time point), and \code{n}/\code{n_events}.
 }
 \description{
 The one function every table and figure goes through. It reports the

@@ -290,8 +290,10 @@ surv_ibs <- function(time, status, survival, time_points, censoring = "marginal"
 #' @param censoring Censoring model.
 #'
 #' @return A list with `overall` (a one-row data frame), `by_time` (one row per
-#'   time point), `row` (a wide one-row data frame with `cindex`, `ibs`, and one
-#'   `brier_<t>`/`auc_<t>` column per time point), and `n`/`n_events`.
+#'   time point, including the `calib_intercept` and `calib_slope` of
+#'   `surv_calibration_slope()`), `row` (a wide one-row data frame with
+#'   `cindex`, `ibs`, and one `brier_<t>`, `auc_<t>`, `calib_intercept_<t>`, and
+#'   `calib_slope_<t>` column per time point), and `n`/`n_events`.
 #' @references
 #' Steyerberg EW (2019). *Clinical Prediction Models: A Practical Approach to
 #' Development, Validation, and Updating*, 2nd edition. Springer.
@@ -324,6 +326,8 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
       time = as.numeric(time_points),
       brier = NA_real_,
       auc = NA_real_,
+      calib_intercept = NA_real_,
+      calib_slope = NA_real_,
       n_case = vapply(time_points, function(t0) sum(status == 1L & time <= t0),
                       integer(1)),
       n_control = vapply(time_points, function(t0) sum(time > t0), integer(1)),
@@ -343,6 +347,8 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
       label <- format(by_time$time[[index]], trim = TRUE)
       row[[paste0("brier_", label)]] <- NA_real_
       row[[paste0("auc_", label)]] <- NA_real_
+      row[[paste0("calib_intercept_", label)]] <- NA_real_
+      row[[paste0("calib_slope_", label)]] <- NA_real_
     }
     return(list(overall = overall, by_time = by_time, row = row))
   }
@@ -355,6 +361,18 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
     auc = vapply(seq_along(time_points), function(index) {
       surv_auc(time, status, survival[, index], time_points[[index]],
                censoring = censoring)
+    }, numeric(1)),
+    calib_intercept = vapply(seq_along(time_points), function(index) {
+      surv_calibration_slope(
+        time, status, survival[, index], time_points[[index]],
+        censoring = censoring
+      )$intercept
+    }, numeric(1)),
+    calib_slope = vapply(seq_along(time_points), function(index) {
+      surv_calibration_slope(
+        time, status, survival[, index], time_points[[index]],
+        censoring = censoring
+      )$slope
     }, numeric(1)),
     n_case = vapply(time_points, function(t0) {
       sum(status == 1L & time <= t0)
@@ -380,6 +398,8 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
     label <- format(by_time$time[[index]], trim = TRUE)
     row[[paste0("brier_", label)]] <- by_time$brier[[index]]
     row[[paste0("auc_", label)]] <- by_time$auc[[index]]
+    row[[paste0("calib_intercept_", label)]] <- by_time$calib_intercept[[index]]
+    row[[paste0("calib_slope_", label)]] <- by_time$calib_slope[[index]]
   }
   list(overall = overall, by_time = by_time, row = row)
 }

@@ -235,10 +235,15 @@ plot_surv_roc <- function(result, set = NULL, models = NULL, palette = NULL) {
 #' Plot time-point calibration
 #'
 #' @param calibration Either `result$calibration$metrics`, a calibration table
-#'   with `predicted` and `observed` columns, or a `uniml_result`.
+#'   with `predicted` and `observed` columns, the list returned by
+#'   `surv_calibration_curves()`, or a `uniml_result`.
 #' @param set Which data set to plot when a result is supplied.
 #' @param models Optional model keys.
 #' @param palette Optional vector of colours.
+#' @param annotate Add the integrated calibration index and the recalibration
+#'   slope and intercept from `surv_calibration_slope()` to the caption. Ignored
+#'   when those numbers are not available, which is the case for a bare
+#'   calibration table.
 #'
 #' @return A `ggplot` object.
 #' @references
@@ -253,7 +258,7 @@ plot_surv_roc <- function(result, set = NULL, models = NULL, palette = NULL) {
 #'                                   c(12, 36))
 #' plot_surv_calibration(curves$table)
 plot_surv_calibration <- function(calibration, set = NULL, models = NULL,
-                                  palette = NULL) {
+                                  palette = NULL, annotate = TRUE) {
   frame <- .surv_calibration_table(calibration, set = set, models = models)
   if (is.null(frame) || nrow(frame) == 0L) {
     .abort("No calibration table is available to plot.")
@@ -261,7 +266,7 @@ plot_surv_calibration <- function(calibration, set = NULL, models = NULL,
   frame$panel <- sprintf("%s (t = %s)", frame$model,
                          format(frame$time, trim = TRUE))
   colours <- palette %||% .surv_palette(length(unique(frame$panel)))
-  ggplot2::ggplot(
+  plot <- ggplot2::ggplot(
     frame,
     ggplot2::aes(x = .data$predicted, y = .data$observed, colour = .data$panel)
   ) +
@@ -276,6 +281,63 @@ plot_surv_calibration <- function(calibration, set = NULL, models = NULL,
       colour = NULL
     ) +
     uniml::theme_uniml()
+  caption <- if (isTRUE(annotate)) {
+    .surv_calibration_caption(calibration, set = set, models = models)
+  } else {
+    NULL
+  }
+  if (!is.null(caption)) {
+    plot <- plot + ggplot2::labs(caption = caption)
+  }
+  plot
+}
+
+# One caption line per curve. `surv_calibration()` groups patients and cannot
+# report a slope, so the coefficients come from the summary that
+# `surv_calibration_curves()` and the workflow both carry.
+.surv_calibration_caption <- function(calibration, set = NULL, models = NULL) {
+  summary <- if (inherits(calibration, "uniml_result")) {
+    calibration$calibration$summary
+  } else if (is.list(calibration) && !is.null(calibration$summary)) {
+    calibration$summary
+  } else {
+    NULL
+  }
+  if (is.null(summary) || !is.data.frame(summary) || nrow(summary) == 0L) {
+    return(NULL)
+  }
+  if (!all(c("slope", "intercept") %in% names(summary))) {
+    return(NULL)
+  }
+  if (!is.null(set) && !is.null(summary$set)) {
+    summary <- summary[summary$set == set, , drop = FALSE]
+  }
+  if (!is.null(models) && !is.null(summary$model)) {
+    summary <- summary[summary$model %in% models, , drop = FALSE]
+  }
+  if (nrow(summary) == 0L) {
+    return(NULL)
+  }
+  if (is.null(summary$model)) {
+    summary$model <- "model"
+  }
+  number <- function(x) if (is.na(x)) "NA" else formatC(x, format = "f", digits = 3)
+  lines <- vapply(
+    seq_len(nrow(summary)),
+    function(index) {
+      row <- summary[index, , drop = FALSE]
+      sprintf(
+        "%s (t = %s): ICI %s; slope %s; intercept %s",
+        row$model,
+        format(row$time, trim = TRUE),
+        number(row$ici),
+        number(row$slope),
+        number(row$intercept)
+      )
+    },
+    character(1)
+  )
+  paste(lines, collapse = "\n")
 }
 
 #' Plot time-point decision curves
@@ -400,6 +462,8 @@ plot_surv_time_metrics <- function(result, set = "validation", models = NULL,
     calibration$calibration$metrics
   } else if (is.list(calibration) && !is.null(calibration$metrics)) {
     calibration$metrics
+  } else if (is.list(calibration) && is.data.frame(calibration$table)) {
+    calibration$table
   } else if (is.data.frame(calibration)) {
     calibration
   } else {

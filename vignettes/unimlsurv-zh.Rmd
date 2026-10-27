@@ -133,8 +133,22 @@ head(calibration$table, 4)
 `ici` 是积分校准指数：在每个预测分组内，预测值与 Kaplan-Meier 估计之差的绝对值，
 按病人数加权平均。分组只看预测值，绝不看结局。
 
-```{r calibration-plot, fig.cap = "各时间点的预测生存率与 Kaplan-Meier 估计。"}
-plot_surv_calibration(calibration$table)
+汇总表里还有 `slope` 和 `intercept`，它们回答的是比分组表更锋利的问题，而且不依赖
+分组怎么切：
+
+```{r calibration-slope}
+surv_calibration_slope(prepared$time, prepared$status, survival[, 1], time_points[1])
+```
+
+`surv_calibration_slope()` 拟合
+`cloglog(P(T <= t | x)) = intercept + slope * cloglog(1 - S(t | x))`。互补对数-对数
+链接正是比例风险模型可加的那个尺度，所以校准良好的预测给出斜率 1、截距 0。斜率小于 1
+表示预测太极端，大于 1 表示太保守；截距不为 0 表示整条曲线整体偏高或偏低。时点之前
+删失的病人对这个二分类结局没有信息，直接丢弃；其余病人按 Kaplan-Meier 删失生存的
+倒数加权——和 Brier 分数用的是同一套权重。
+
+```{r calibration-plot, fig.cap = "各时间点的预测生存率与 Kaplan-Meier 估计，图注里带重新校准系数。"}
+plot_surv_calibration(calibration)
 ```
 
 ## 决策曲线

@@ -23,5 +23,5 @@ bibentry(
   title = "unimlsurv: Survival Analysis Modelling with mlr3",
   author = person("Steve", "Shi"),
   year = "2026",
-  note = "R package version 0.2.1"
+  note = "R package version 0.2.2"
 )

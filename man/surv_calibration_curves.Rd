@@ -28,7 +28,8 @@ surv_calibration_curves(
 }
 \value{
 A list with \code{table} (a long table over time points), \code{summary} (one
-row per time point), and \code{curves} (the per-group data used by the plot).
+row per time point, including the \code{surv_calibration_slope()} coefficients),
+and \code{curves} (the per-group data used by the plot).
 }
 \description{
 Calibration at every requested time point

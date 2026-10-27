@@ -1,3 +1,34 @@
+# unimlsurv 0.2.2
+
+Time-point recalibration coefficients, the survival counterpart of the binary
+calibration slope and intercept that `uniml` reports.
+
+* New `surv_calibration_slope()` fits
+  `cloglog(P(T <= t | x)) = intercept + slope * cloglog(1 - S(t | x))` at one time
+  point: a complementary log-log link, because that is the scale on which a
+  proportional hazards model is additive (van Houwelingen & le Cessie 1990;
+  Royston & Altman 2013). Perfectly calibrated predictions give `slope = 1` and
+  `intercept = 0`. Patients censored before the time point carry no information
+  and are dropped; the rest are weighted by the inverse Kaplan-Meier censoring
+  survival, the same weighting `surv_brier()` uses.
+* A slope below 1 means the predictions are too extreme, above 1 too timid, and a
+  non-zero intercept means they are systematically too high or too low.
+* Fewer than 20 patients, fewer than 5 events or 5 non-events, separation, or
+  non-convergence return `NA` with a `message` instead of a number nobody should
+  report. A constant prediction has no slope; only the intercept (calibration-in-
+  the-large) is returned in that case.
+* `calc_surv_metrics()` gains `calib_intercept` and `calib_slope` in `by_time` and
+  `calib_intercept_<t>`/`calib_slope_<t>` in `row`, so `surv_ci()` bootstraps them
+  and the workflow reports them next to the Brier score and the AUC.
+* `surv_calibration_curves()$summary` now carries `ici`, `slope`, `intercept`,
+  `n`, `events`, and `message` side by side, one row per time point.
+* `run_surv_workflow()` keeps them in `result$calibration$summary`. That table is
+  exported as `calibration/summary.csv`, which needs `uniml (>= 0.4.0)`; the
+  floor is raised so the numbers cannot be silently dropped on export.
+* `plot_surv_calibration()` gains `annotate` (default `TRUE`), which writes the
+  ICI, the slope and the intercept of every curve into the caption. It also
+  accepts the list returned by `surv_calibration_curves()` directly.
+
 # unimlsurv 0.2.1
 
 * `surv_spec()` and `run_surv_workflow()` ask uniml for `methods = "none"` rather

@@ -42,6 +42,7 @@ result$ranking
 | Integrated Brier score | `surv_ibs()` | Brier integrated over your time points | hand trapezoid |
 | Time-dependent AUC | `surv_auc()` | cumulative/dynamic AUC, IPCW | `riskRegression::Score()`; the area under `surv_roc_curve()` |
 | Calibration at `t` | `surv_calibration()` | predicted vs Kaplan-Meier, by prediction group | definition of ICI |
+| Recalibration at `t` | `surv_calibration_slope()` | cloglog slope and intercept, IPCW | a true model gives slope 1, intercept 0 |
 | Net benefit at `t` | `surv_dca()` | IPCW net benefit vs treat-all / treat-none | definition of net benefit |
 | Confidence intervals | `surv_ci()` | percentile bootstrap over patients | the point estimate it brackets |
 

@@ -4,17 +4,29 @@
 \alias{plot_surv_calibration}
 \title{Plot time-point calibration}
 \usage{
-plot_surv_calibration(calibration, set = NULL, models = NULL, palette = NULL)
+plot_surv_calibration(
+  calibration,
+  set = NULL,
+  models = NULL,
+  palette = NULL,
+  annotate = TRUE
+)
 }
 \arguments{
 \item{calibration}{Either \code{result$calibration$metrics}, a calibration table
-with \code{predicted} and \code{observed} columns, or a \code{uniml_result}.}
+with \code{predicted} and \code{observed} columns, the list returned by
+\code{surv_calibration_curves()}, or a \code{uniml_result}.}
 
 \item{set}{Which data set to plot when a result is supplied.}
 
 \item{models}{Optional model keys.}
 
 \item{palette}{Optional vector of colours.}
+
+\item{annotate}{Add the integrated calibration index and the recalibration
+slope and intercept from \code{surv_calibration_slope()} to the caption. Ignored
+when those numbers are not available, which is the case for a bare
+calibration table.}
 }
 \value{
 A \code{ggplot} object.

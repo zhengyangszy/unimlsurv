@@ -234,7 +234,8 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
       by_time$model <- key
       by_time$set <- set
       by_time_rows[[length(by_time_rows) + 1L]] <- by_time[, c(
-        "model", "set", "time", "brier", "auc", "n_case", "n_control"
+        "model", "set", "time", "brier", "auc", "calib_intercept",
+        "calib_slope", "n_case", "n_control"
       )]
       predictions[[paste0(key, ":", set)]] <- list(
         model = key,
@@ -403,6 +404,7 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
   }
   time_points <- spec$survival$time_points
   rows <- list()
+  summaries <- list()
   for (entry in predictions) {
     if (!identical(entry$set, select_on) || is.null(entry$survival)) {
       next
@@ -412,21 +414,39 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
       censoring = spec$survival$censoring_model
     )
     tables <- curves$table
-    if (nrow(tables) == 0L) {
-      next
+    if (nrow(tables) > 0L) {
+      tables$model <- entry$model
+      tables$set <- entry$set
+      rows[[length(rows) + 1L]] <- tables[, c(
+        "model", "set", "time", "group", "n", "predicted", "observed",
+        "difference"
+      )]
     }
-    tables$model <- entry$model
-    tables$set <- entry$set
-    rows[[length(rows) + 1L]] <- tables[, c(
-      "model", "set", "time", "group", "n", "predicted", "observed",
-      "difference"
+    summary <- curves$summary
+    summary$model <- entry$model
+    summary$set <- entry$set
+    summaries[[length(summaries) + 1L]] <- summary[, c(
+      "model", "set", "time", "ici", "slope", "intercept", "groups", "n",
+      "events", "message"
     )]
   }
-  if (length(rows) == 0L) {
+  if (length(rows) == 0L && length(summaries) == 0L) {
     return(NULL)
   }
-  out <- do.call(rbind, rows)
-  rownames(out) <- NULL
+  out <- if (length(rows) == 0L) {
+    data.frame(
+      model = character(), set = character(), time = numeric(),
+      group = integer(), n = integer(), predicted = numeric(),
+      observed = numeric(), difference = numeric(),
+      stringsAsFactors = FALSE
+    )
+  } else {
+    combined <- do.call(rbind, rows)
+    rownames(combined) <- NULL
+    combined
+  }
+  summary <- do.call(rbind, summaries)
+  rownames(summary) <- NULL
   list(
     method = "kaplan_meier_groups",
     # Survival calibration has no per-model fitted parameters; the empty entries
@@ -434,7 +454,8 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
     parameters = stats::setNames(rep(list(list()), length(models)), models),
     models = models,
     set = select_on,
-    metrics = out
+    metrics = out,
+    summary = summary
   )
 }
 

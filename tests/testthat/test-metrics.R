@@ -199,10 +199,20 @@ test_that("calc_surv_metrics() reports the same numbers as its parts", {
   expect_equal(metrics$overall$n_events, sum(data$status))
   expect_equal(metrics$by_time$brier[2], surv_brier(data$time, data$status, survival[, 2], 12))
   expect_equal(metrics$by_time$auc[2], surv_auc(data$time, data$status, survival[, 2], 12))
+  expect_equal(
+    metrics$by_time$calib_slope[2],
+    surv_calibration_slope(data$time, data$status, survival[, 2], 12)$slope
+  )
+  expect_equal(
+    metrics$by_time$calib_intercept[2],
+    surv_calibration_slope(data$time, data$status, survival[, 2], 12)$intercept
+  )
   expect_identical(
     names(metrics$row),
-    c("n", "n_events", "cindex", "ibs", "brier_6", "auc_6",
-      "brier_12", "auc_12", "brier_24", "auc_24")
+    c("n", "n_events", "cindex", "ibs",
+      "brier_6", "auc_6", "calib_intercept_6", "calib_slope_6",
+      "brier_12", "auc_12", "calib_intercept_12", "calib_slope_12",
+      "brier_24", "auc_24", "calib_intercept_24", "calib_slope_24")
   )
 
   # A learner with no survival distribution still gets a C-index.

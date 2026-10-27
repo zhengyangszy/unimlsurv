@@ -41,6 +41,7 @@ result$ranking
 | 积分 Brier | `surv_ibs()` | 在你给的时间点上积分 | 手算梯形积分 |
 | 时依 AUC | `surv_auc()` | 累积/动态 AUC，IPCW | `riskRegression::Score()`；以及 `surv_roc_curve()` 曲线下面积 |
 | 时点校准 | `surv_calibration()` | 预测值 vs 分组内 Kaplan-Meier | ICI 定义 |
+| 时点重新校准 | `surv_calibration_slope()` | cloglog 斜率与截距，IPCW 加权 | 真模型给出斜率 1、截距 0 |
 | 时点净获益 | `surv_dca()` | IPCW 净获益，对照全干预/不干预 | 净获益定义 |
 | 置信区间 | `surv_ci()` | 按病人重抽样的百分位 bootstrap | 它所包围的点估计 |
 
