@@ -147,6 +147,11 @@ surv_calibration_slope(prepared$time, prepared$status, survival[, 1], time_point
 删失的病人对这个二分类结局没有信息，直接丢弃；其余病人按 Kaplan-Meier 删失生存的
 倒数加权——和 Brier 分数用的是同一套权重。
 
+看系数之前先看它返回的 `n` 和 `events`。这批病人够多，所以系数是可估的；但只用几十个
+病人估出来的斜率离 1 很远也可能是噪声，因为预测生存率在 cloglog 尺度上的跨度很小，
+拟合主要在放大噪声。大约 100 个病人、几十个事件之后这个数才开始有含义；不到这个量级，
+报校准曲线就好，别报系数。
+
 ```{r calibration-plot, fig.cap = "各时间点的预测生存率与 Kaplan-Meier 估计，图注里带重新校准系数。"}
 plot_surv_calibration(calibration)
 ```

@@ -52,7 +52,16 @@ With fewer than 20 patients or fewer than 5 events or 5 non-events at the time
 point the coefficients are returned as \code{NA} with a \code{message}, because a
 two-parameter fit on a handful of patients produces a number nobody should
 report. The same applies when the fit separates the outcome or fails to
-converge.
+converge. When the predicted survival is constant the slope is not identified,
+so only the intercept is returned, which in that case is calibration-in-the-
+large.
+
+Passing that floor is not the same as having enough data. A slope from a few
+dozen patients can be far from 1 while the model is fine, because the spread of
+the predicted survival on the cloglog scale is small and the fit mostly
+amplifies noise. Treat a slope as worth reading at roughly 100 patients with a
+few dozen events; \code{n} and \code{events} are returned precisely so a reader can
+judge, and a report that gives the slope without them is not reproducible.
 }
 \examples{
 data <- sim_surv_data(n = 300, seed = 1)

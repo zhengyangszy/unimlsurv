@@ -149,6 +149,13 @@ surv_calibration <- function(time, status, survival, time_point, groups = 10L,
 #' so only the intercept is returned, which in that case is calibration-in-the-
 #' large.
 #'
+#' Passing that floor is not the same as having enough data. A slope from a few
+#' dozen patients can be far from 1 while the model is fine, because the spread of
+#' the predicted survival on the cloglog scale is small and the fit mostly
+#' amplifies noise. Treat a slope as worth reading at roughly 100 patients with a
+#' few dozen events; `n` and `events` are returned precisely so a reader can
+#' judge, and a report that gives the slope without them is not reproducible.
+#'
 #' @param time Follow-up times.
 #' @param status Event indicator.
 #' @param survival Predicted survival probability at `time_point`.

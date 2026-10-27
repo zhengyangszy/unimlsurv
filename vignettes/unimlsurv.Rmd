@@ -166,6 +166,14 @@ censored before the horizon carry no information about the binary outcome at tha
 horizon and are dropped, and the rest are weighted by the inverse Kaplan-Meier
 censoring survival — the same weighting as the Brier score.
 
+Read the `n` and `events` it returns before reading the coefficients. This
+cohort has enough patients to estimate them, but a slope from a few dozen
+patients can sit far from 1 while the model is fine, because the spread of the
+predicted survival on the cloglog scale is small and the fit mostly amplifies
+noise. Roughly 100 patients with a few dozen events is the point at which the
+number starts to mean something; below that, report the reliability curve and
+skip the coefficient.
+
 ```{r calibration-plot, fig.cap = "Time-point calibration against Kaplan-Meier survival, with the recalibration coefficients in the caption."}
 plot_surv_calibration(calibration)
 ```
