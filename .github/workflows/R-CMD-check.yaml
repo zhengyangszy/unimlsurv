@@ -35,26 +35,34 @@ jobs:
 
       # `mlr3proba`, `mlr3extralearners`, and `uniml` are not on CRAN, so they
       # are installed from GitHub before the declared dependencies are resolved.
+      # The minimum `uniml` version is read from DESCRIPTION rather than copied
+      # here, because a stale copy silently installs an uniml this package cannot
+      # use.
       - name: Install GitHub-only dependencies
         run: |
           install.packages(c("remotes", "rcmdcheck", "pak"))
           remotes::install_github(
-            c(
-              "mlr-org/mlr3proba",
-              "mlr-org/mlr3extralearners",
-              "zhengyangszy/uniml"
-            ),
+            c("mlr-org/mlr3proba", "mlr-org/mlr3extralearners"),
             upgrade = "never",
             dependencies = TRUE
           )
-          needed <- "0.3.3"
+          remotes::install_github(
+            "zhengyangszy/uniml",
+            upgrade = "always",
+            dependencies = TRUE
+          )
+          imports <- read.dcf("DESCRIPTION")[1, "Imports"]
+          needed <- sub(
+            ".*uniml \\(>= ([0-9.]+)\\).*", "\\1", imports
+          )
           have <- as.character(packageVersion("uniml"))
           if (utils::compareVersion(have, needed) < 0) {
             stop(
               "uniml ", have, " is too old for this check; ",
-              "the API this package calls was added in ", needed, "."
+              "DESCRIPTION requires ", needed, "."
             )
           }
+          cat("uniml", have, "satisfies >=", needed, "\n")
         shell: Rscript {0}
 
       - uses: r-lib/actions/setup-r-dependencies@v2
