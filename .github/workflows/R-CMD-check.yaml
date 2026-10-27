@@ -62,6 +62,22 @@ jobs:
           extra-packages: any::rcmdcheck
           needs: check
 
+      # A survival specification must never carry a feature-selection method: the
+      # available selectors screen the outcome column, which here is the event
+      # indicator. Asserting it here turns a subtle vignette failure into a line
+      # that says what broke.
+      - name: Sanity check the survival specification
+        run: |
+          library(unimlsurv)
+          spec <- surv_spec("time", "status", c(12, 36))
+          stopifnot(length(spec$selection$methods) == 0L)
+          spec <- surv_set_learners(spec, "coxph", tune = FALSE)
+          stopifnot(length(spec$selection$methods) == 0L)
+          spec <- surv_set_tuning(spec, folds = 2L, evals = 1L)
+          stopifnot(length(spec$selection$methods) == 0L)
+          cat("specification ok\n")
+        shell: Rscript {0}
+
       - uses: r-lib/actions/check-r-package@v2
         with:
           upload-snapshots: true

@@ -147,6 +147,11 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
   # been read.
   prepared_train <- as_surv_data(train, spec, "train")
   spec$preprocess$vars <- prepared_train$features
+  # And there is no survival feature selector: `uniml`'s selectors screen the
+  # outcome column, which here would be the event indicator, so they would ignore
+  # the follow-up time entirely. Set it here as well as in `surv_spec()`, so a
+  # specification assembled by hand or by another setter cannot reintroduce one.
+  spec$selection$methods <- character()
 
   engine <- uniml::workflow_engine(
     spec,
