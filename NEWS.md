@@ -1,3 +1,12 @@
+# unimlsurv 0.2.1
+
+* `surv_spec()` and `run_surv_workflow()` ask uniml for `methods = "none"` rather
+  than an empty method vector. An empty vector used to fall through uniml's
+  selector machinery and abort with "`selections` must be a non-empty list" when
+  the vignettes were built in a fresh session. The workflow sets it again at the
+  point the engine is called, so a specification assembled elsewhere cannot
+  reintroduce a selector. Requires uniml (>= 0.3.4).
+
 # unimlsurv 0.2.0
 
 Three things a survival model report needs and did not have: intervals, model

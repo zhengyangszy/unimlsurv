@@ -73,7 +73,7 @@ surv_spec <- function(time = "time", status = "status",
   # survival model is the event indicator: it would ignore the time entirely and
   # rank features by a binary outcome. Survival selection is therefore off by
   # default; every feature is used unless the user selects them.
-  spec$selection$methods <- character()
+  spec$selection$methods <- "none"
   class(spec) <- c("unimlsurv_spec", class(spec))
   validate_surv_spec(spec)
   spec
