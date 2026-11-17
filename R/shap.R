@@ -177,17 +177,28 @@ surv_shap <- function(result, newdata, model = "best", time_point = NULL,
     settings[names(overrides)] <- overrides
   }
   explanation <- do.call(kernelshap::kernelshap, settings)
+  # The learner was trained on encoded columns, so the raw SHAP object holds
+  # one column per dummy (sex_female/sex_male). Sum them back to the source
+  # variables: the figures and the feature names then read like the paper.
+  shap_object <- uniml::aggregate_shap_variables(
+    shapviz::shapviz(explanation),
+    entry$preprocessor
+  )
   values <- as.numeric(prediction_function(entry$learner, X))
   structure(
     list(
-      shap = shapviz::shapviz(explanation),
+      shap = shap_object,
       quantity = if (is.null(time_point)) "risk score" else
         sprintf("survival at t = %s", format(time_point, trim = TRUE)),
       time_point = time_point,
       model = model,
-      feature_names = colnames(X),
+      feature_names = colnames(shapviz::get_shap_values(shap_object)),
       values = values,
-      data = X
+      data = as.data.frame(
+        shapviz::get_feature_values(shap_object),
+        stringsAsFactors = FALSE,
+        check.names = FALSE
+      )
     ),
     class = c("unimlsurv_shap", "uniml_shap")
   )

@@ -371,7 +371,7 @@ plot_surv_dca <- function(dca, set = NULL, models = NULL, palette = NULL) {
     labels = c("Model", "Treat all", "Treat none")
   )
   colours <- palette %||% .surv_palette(length(unique(frame$panel)))
-  ggplot2::ggplot(
+  plot <- ggplot2::ggplot(
     frame,
     ggplot2::aes(
       x = .data$threshold, y = .data$net_benefit,
@@ -387,6 +387,15 @@ plot_surv_dca <- function(dca, set = NULL, models = NULL, palette = NULL) {
       linetype = NULL
     ) +
     uniml::theme_uniml()
+  # Treat-all net benefit dives as the threshold approaches 1; published
+  # decision curves clip the y axis to a small negative band instead of
+  # showing the whole dive. The data keep everything, only the view changes.
+  net_benefit <- frame$net_benefit[is.finite(frame$net_benefit)]
+  ymax <- if (length(net_benefit)) max(net_benefit) else NA_real_
+  if (is.finite(ymax) && ymax > 0) {
+    plot <- plot + ggplot2::coord_cartesian(ylim = c(-min(0.05, ymax), ymax))
+  }
+  plot
 }
 
 #' Plot the Brier score and AUC over time
