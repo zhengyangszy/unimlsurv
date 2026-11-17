@@ -180,10 +180,26 @@ surv_shap <- function(result, newdata, model = "best", time_point = NULL,
   # The learner was trained on encoded columns, so the raw SHAP object holds
   # one column per dummy (sex_female/sex_male). Sum them back to the source
   # variables: the figures and the feature names then read like the paper.
-  shap_object <- uniml::aggregate_shap_variables(
-    shapviz::shapviz(explanation),
-    entry$preprocessor
-  )
+  # `aggregate_shap_variables()` arrived in uniml 0.5.2; against an older
+  # uniml the explanation stays per encoded column — correct, just less
+  # readable. Say so instead of failing, because unimlsurv is installed
+  # from GitHub and may sit next to a CRAN uniml that predates the helper.
+  shap_object <- shapviz::shapviz(explanation)
+  can_aggregate <- !is.null(entry$preprocessor) &&
+    requireNamespace("uniml", quietly = TRUE) &&
+    exists("aggregate_shap_variables", envir = asNamespace("uniml"),
+           inherits = FALSE)
+  if (can_aggregate) {
+    shap_object <- uniml::aggregate_shap_variables(
+      shap_object, entry$preprocessor
+    )
+  } else {
+    message(paste0(
+      "uniml (>= 0.5.2) not detected: SHAP values stay per encoded column ",
+      "(sex_female/sex_male). Install a newer uniml to get ",
+      "variable-level explanations."
+    ))
+  }
   values <- as.numeric(prediction_function(entry$learner, X))
   structure(
     list(
