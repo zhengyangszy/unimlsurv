@@ -16,8 +16,12 @@ data. *Statistics in Medicine*, 30(10), 1105-1117. doi:10.1002/sim.4154
 *What the package does*: `surv_cindex()` is Harrell's C, computed over comparable
 pairs only, with a higher risk score meaning a shorter expected survival. It is
 pinned by a test against `survival::concordance(reverse = TRUE)`.
-Uno's IPCW C is not implemented; it reweights the same pairs by the inverse
-censoring survival and answers a different question.
+
+*What the package also does*: `surv_cindex_uno()` is Uno's IPCW concordance
+index at a truncation horizon, with the inverse *squared* censoring survival
+estimated on the **training** data — part of the definition, not an option. It
+is pinned by a test against `survAUC::UnoC()`, which agrees to machine
+precision.
 
 ## Brier score and integrated Brier score
 
@@ -59,6 +63,13 @@ still event-free after `t`. It is pinned twice — against
 `riskRegression::Score()` and against the area under the ROC curve that
 `surv_roc_curve()` draws, so the number and the figure cannot drift apart.
 
+*What the package also does*: `surv_auc_uno()` is Uno's IPCW estimator of the
+same quantity, with case weights of `1/G(T)` taken from the **training**
+censoring curve; `surv_iauc_uno()` integrates it over the requested time points
+with the trapezoidal rule (the same convention as `surv_ibs()`, so it depends
+on that grid). Both are pinned by tests against `survAUC::AUC.uno()`, which
+agrees to machine precision.
+
 ## Calibration
 
 Van Calster B, McLernon DJ, van Smeden M, Wynants L, Steyerberg EW (2019).
@@ -66,14 +77,23 @@ Calibration: the Achilles heel of predictive analytics. *BMC Medicine*, 17, 230.
 doi:10.1186/s12916-019-1466-7
 
 Austin PC, Steyerberg EW (2019). The integrated calibration index (ICI) and
-related metrics for assessing the calibration of survival models with binary
-outcomes. *Statistics in Medicine*, 38(28), 5476-5494. doi:10.1002/sim.8356
+related metrics for quantifying the calibration of logistic regression models.
+*Statistics in Medicine*, 38(21), 4051-4065. doi:10.1002/sim.8281
+
+Austin PC, Harrell FE Jr, van Klaveren D (2020). Graphical calibration curves
+and the integrated calibration index (ICI) for survival models. *Statistics in
+Medicine*, 39(21), 2714-2742. doi:10.1002/sim.8570
 
 *What the package does*: `surv_calibration()` groups patients by predicted
 survival and compares the group mean prediction with the group Kaplan-Meier
 estimate at the time point. The summary is the ICI, the patient-weighted mean
-absolute difference. Groups are formed from the predictions, never from the
-outcome, so calibration cannot peek at what it is being judged on.
+absolute difference, together with the calibration-in-the-large statistic
+`citl` (the group-size-weighted mean signed difference) and the `e50`/`e90`
+percentiles of the patient-level absolute error, where each patient's observed
+value is the Kaplan-Meier estimate of their prediction group — the grouped
+analogue of the smoothed curve in the papers. Groups are formed from the
+predictions, never from the outcome, so calibration cannot peek at what it is
+being judged on.
 
 van Houwelingen JC, le Cessie S (1990). Predictive value of statistical models.
 *Statistics in Medicine*, 9(11), 1303-1325. doi:10.1002/sim.4780091109
@@ -127,11 +147,18 @@ Burton A, Altman DG, Royston P, Holder RL (2006). The design of simulation
 studies in medical statistics. *Statistics in Medicine*, 25(24), 4279-4292.
 doi:10.1002/sim.2328
 
-*What the package does*: `plot_surv_km()` draws Kaplan-Meier curves.
-`sim_surv_data()` simulates a Weibull proportional-hazards cohort with
-exponential censoring and stores the true linear predictor, so every metric can
-be checked against the truth rather than against another implementation of the
-same assumption.
+*What the package does*: `plot_surv_km()` draws Kaplan-Meier curves, optionally
+with the two-sided log-rank test:
+
+Bland JM, Altman DG (2004). The logrank test. *BMJ*, 328(7447), 1073.
+doi:10.1136/bmj.328.7447.1073
+
+and `surv_risk_groups()` splits patients into risk strata for that figure. The
+strata are a presentation device: their boundaries depend on the sample and
+must not be reused as clinical thresholds. `sim_surv_data()` simulates a
+Weibull proportional-hazards cohort with exponential censoring and stores the
+true linear predictor, so every metric can be checked against the truth rather
+than against another implementation of the same assumption.
 
 ## Confidence intervals
 

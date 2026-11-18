@@ -12,6 +12,16 @@
 #' survival, summed over groups and divided by the total. A value of 0 means the
 #' predictions sit on the Kaplan-Meier curve.
 #'
+#' Three companion statistics from the same paper are reported alongside it.
+#' `citl` is calibration-in-the-large, the group-size-weighted mean of
+#' `observed - predicted`: negative means the predictions are too high on
+#' average. `e50` and `e90` are the median and the 90th percentile of the
+#' absolute patient-level error, where each patient's observed value is the
+#' Kaplan-Meier estimate of the group their prediction falls in — the grouped
+#' analogue of the smoothed curve in the paper. A large ICI with a small E50
+#' means a few groups are badly off; the reverse means small errors are spread
+#' everywhere.
+#'
 #' @param time Follow-up times.
 #' @param status Event indicator.
 #' @param survival Predicted survival probability at `time_point`.
@@ -19,16 +29,22 @@
 #' @param groups Number of prediction groups.
 #' @param censoring Censoring model, kept for symmetry with the other metrics.
 #'
-#' @return A list with `table` (one row per group), `ici`, `n`, `events`, and a
-#'   `message` when the calibration is not estimable.
+#' @return A list with `table` (one row per group), `ici`, `citl`, `e50`,
+#'   `e90`, `n`, `events`, and a `message` when the calibration is not
+#'   estimable.
 #' @references
 #' Van Calster B, McLernon DJ, van Smeden M, Wynants L, Steyerberg EW (2019).
 #' Calibration: the Achilles heel of predictive analytics. *BMC Medicine*, 17,
 #' 230. doi:10.1186/s12916-019-1466-7
 #'
+#' Austin PC, Harrell FE Jr, van Klaveren D (2020). Graphical calibration curves
+#' and the integrated calibration index (ICI) for survival models.
+#' *Statistics in Medicine*, 39(21), 2714-2742. doi:10.1002/sim.8570
+#'
 #' Austin PC, Steyerberg EW (2019). The integrated calibration index (ICI) and
-#' related metrics for assessing the calibration of survival models with binary
-#' outcomes. *Statistics in Medicine*, 38(28), 5476-5494. doi:10.1002/sim.8356
+#' related metrics for quantifying the calibration of logistic regression
+#' models. *Statistics in Medicine*, 38(21), 4051-4065.
+#' doi:10.1002/sim.8281
 #' @export
 #' @examples
 #' data <- sim_surv_data(n = 200, seed = 1)
@@ -48,13 +64,21 @@ surv_calibration <- function(time, status, survival, time_point, groups = 10L,
     observed = numeric(), difference = numeric(),
     stringsAsFactors = FALSE
   )
-  if (!any(time <= time_point) || !any(time > time_point)) {
-    return(list(
+  not_estimable <- function(message) {
+    list(
       table = empty,
       ici = NA_real_,
+      citl = NA_real_,
+      e50 = NA_real_,
+      e90 = NA_real_,
       n = n,
       events = sum(status == 1L),
-      message = "The time point does not split the cohort into cases and controls."
+      message = message
+    )
+  }
+  if (!any(time <= time_point) || !any(time > time_point)) {
+    return(not_estimable(
+      "The time point does not split the cohort into cases and controls."
     ))
   }
 
@@ -65,20 +89,18 @@ surv_calibration <- function(time, status, survival, time_point, groups = 10L,
     names = FALSE
   ))
   if (length(breaks) < 3L) {
-    return(list(
-      table = empty,
-      ici = NA_real_,
-      n = n,
-      events = sum(status == 1L),
-      message = "The predicted survival does not vary enough to form groups."
+    return(not_estimable(
+      "The predicted survival does not vary enough to form groups."
     ))
   }
   bin <- cut(survival, breaks = breaks, include.lowest = TRUE)
+  abs_error <- rep(NA_real_, n)
   rows <- lapply(split(seq_len(n), bin), function(index) {
     if (length(index) == 0L) {
       return(NULL)
     }
     km <- .km_survival(time[index], status[index])(time_point)
+    abs_error[index] <<- abs(as.numeric(km) - survival[index])
     data.frame(
       group = as.integer(bin[index][[1L]]),
       n = length(index),
@@ -90,19 +112,16 @@ surv_calibration <- function(time, status, survival, time_point, groups = 10L,
   })
   table <- do.call(rbind, rows[!vapply(rows, is.null, logical(1))])
   if (is.null(table) || nrow(table) == 0L) {
-    return(list(
-      table = empty,
-      ici = NA_real_,
-      n = n,
-      events = sum(status == 1L),
-      message = "No calibration group could be formed."
-    ))
+    return(not_estimable("No calibration group could be formed."))
   }
   rownames(table) <- NULL
   ici <- sum(table$n * abs(table$difference)) / sum(table$n)
   list(
     table = table,
     ici = ici,
+    citl = sum(table$n * table$difference) / sum(table$n),
+    e50 = stats::median(abs_error),
+    e90 = as.numeric(stats::quantile(abs_error, 0.90, names = FALSE)),
     n = n,
     events = sum(status == 1L),
     message = NULL
@@ -305,6 +324,9 @@ surv_calibration_curves <- function(time, status, survival, time_points,
     summaries[[length(summaries) + 1L]] <- data.frame(
       time = time_points[[index]],
       ici = result$ici,
+      citl = result$citl,
+      e50 = result$e50,
+      e90 = result$e90,
       groups = nrow(table),
       slope = slope$slope,
       intercept = slope$intercept,

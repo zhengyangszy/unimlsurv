@@ -1,0 +1,293 @@
+---
+title: "Every metric in unimlsurv, explained"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{Every metric in unimlsurv, explained}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.5
+)
+suppressPackageStartupMessages({
+  library(unimlsurv)
+  library(mlr3)
+})
+```
+
+This vignette walks through every number `unimlsurv` produces, one at a time.
+Each section answers the same three questions:
+
+1. **What question does this number answer?** (No formulas.)
+2. **How do I read it?** (Good values, bad values, and what moves it.)
+3. **When should I not read it?** (Small samples, heavy censoring, horizons
+   the data cannot support.)
+
+All examples use one simulated cohort of 300 patients with a **known truth**,
+so every number can be compared against the model that generated the data.
+The main workflow vignette shows how these pieces assemble into a paper.
+
+```{r data}
+data <- sim_surv_data(n = 300, seed = 2026)
+time_points <- c(3, 6, 12)
+truth <- sim_surv_truth(data, time_points)
+
+## One fitted Cox model for the whole tutorial
+spec <- surv_spec(time = "time", status = "status", time_points = time_points)
+prepared <- as_surv_data(data, spec)
+task <- make_surv_task(prepared, spec)
+fitted <- train_surv(task, mlr3::lrn("surv.coxph"))
+prediction <- fitted$predict(task)
+survival <- survival_matrix(prediction, time_points)
+risk <- survival_risk(prediction)
+```
+
+## Thirty seconds on censoring
+
+A survival outcome is two columns: how long the patient was observed, and
+whether an event happened. A patient who moved away after 8 months is not
+"alive at 8 months" and not "dead at 8 months" — the record only says "no event
+during the first 8 months". Censored patients still carry information (they
+were event-free *up to* their last contact), and every metric in this package
+uses that information correctly: either by dropping censored patients from
+comparisons they cannot inform, or by re-weighting with the censoring
+survival. The package never lets you turn the outcome into a plain 0/1 column.
+
+## Discrimination, part 1: Harrell's C
+
+**Question.** When one patient had the event before another, did the model
+rank the sicker one higher?
+
+```{r harrell}
+surv_cindex(data$time, data$status, risk)
+```
+
+**Reading.** 0.5 is a coin flip; 0.6 is weak; 0.7 is usable; 0.75+ is good for
+clinical data. `0` and `1` never appear in real cohorts. Pairs are only
+"comparable" when the earlier event tells you the order — censored patients
+join a pair only through their event-free stretch.
+
+**Do not read it when.** The censoring distributions of two cohorts differ:
+the comparable-pair set then differs too, and the same model earns different
+C-indices for reasons unrelated to the model. That is exactly the gap Uno's C
+closes, which is why papers report both.
+
+```{r truth-c}
+## The truth itself, scored the same way — the ceiling this data allows
+surv_cindex(data$time, data$status, truth$risk)
+```
+
+The simulated truth earns about `r round(surv_cindex(data$time, data$status,
+truth$risk), 2)` on this cohort: that is the ceiling the noise and censoring
+impose, and a good model should land close to it.
+
+## Discrimination, part 2: Uno's C
+
+**Question.** The same question, with the censoring dependence removed. Uno's
+C (2011) truncates the analysis at a horizon `tau`, weights each event
+patient by the inverse **squared** censoring survival estimated on the
+**training** data, and discards tied risk scores.
+
+```{r uno-c}
+set.seed(7)
+index <- sample.int(nrow(data), 150)
+surv_cindex_uno(
+  time_train = data$time[-index], status_train = data$status[-index],
+  time_test = data$time[index], status_test = data$status[index],
+  risk_test = risk[index]
+)
+```
+
+**Reading.** Same scale as Harrell's C. Report the two side by side; when they
+disagree, the disagreement is about the censoring, not the model. The training
+data are part of the definition — the package refuses to estimate the weights
+on the evaluation set, because that is a different (and wrong) censoring
+distribution.
+
+**Do not read it when.** Your horizon `tau` runs past the training follow-up:
+the censoring survival becomes 0 and patients are dropped, which the
+reference implementation also does. Keep `tau` inside the training follow-up.
+
+## Discrimination over time: the time-dependent AUC
+
+**Question.** At a chosen horizon `t`, does the model separate the patients
+who had an event by `t` from those still event-free after it? This is the
+question a clinician asks at a decision point, and it is *local*: a model can
+have an excellent overall C and a poor AUC at your horizon.
+
+```{r tdauc}
+metrics <- calc_surv_metrics(
+  data$time, data$status, risk, survival, time_points
+)
+metrics$by_time[, c("time", "n_case", "n_control", "auc", "auc_uno")]
+```
+
+**Reading.** Again 0.5 is the coin flip. Watch `n_case` and `n_control`: an
+AUC built on 3 cases is noise. The cumulative/dynamic AUC (`auc`) weights its
+pairs with the censoring survival estimated on the evaluation data; Uno's
+`auc_uno` takes the case weights from the **training** censoring curve. When
+they disagree on a small validation set, report both.
+
+The ROC curve behind the number is available too, so the figure and the
+quantity cannot disagree:
+
+```{r roc, fig.cap = "Cumulative/dynamic ROC at 6 months."}
+curve <- surv_roc_curve(data$time, data$status, survival[, 2], 6)
+head(curve, 3)
+```
+
+**Do not read it when.** `n_case` or `n_control` is small, or when the horizon
+sits past the observed follow-up: the package returns `NA` there instead of a
+number nobody can defend.
+
+## Prediction error: Brier score and IBS
+
+**Question.** Is the predicted S(t) close to what actually happened? Unlike
+the AUC, this is a proper scoring rule: it can only be improved by predicting
+the truth.
+
+```{r brier}
+metrics$by_time[, c("time", "brier")]
+```
+
+**Reading.** Lower is better; 0.25 is the score of predicting 0.5 for
+everyone, and the benchmark curve is the Brier score of the Kaplan-Meier
+estimator (the "no model at all" baseline). A model must beat that baseline to
+be worth anything. `ibs` integrates the Brier score over your grid and divides
+by its width, so it stays on the Brier scale — and it inherits the grid: two
+papers using different grids report different IBS values for the same model.
+
+**Do not read it when.** The model does not produce survival probabilities at
+all — a risk-only model gets `NA` here, by design, because inventing a
+distribution is worse than admitting there is none.
+
+## Calibration: is the number right?
+
+**Question.** When the model says S(t) = 0.8, do 8 out of 10 such patients
+really survive past `t`?
+
+```{r calibration}
+calibration <- surv_calibration_curves(
+  data$time, data$status, survival, time_points
+)
+calibration$summary
+```
+
+Four numbers, one per time point, all from the same grouped comparison
+(groups are formed from the *predictions*, never from the outcome):
+
+* **ICI** — the patient-weighted mean absolute gap between prediction and the
+  group Kaplan-Meier estimate. Small everywhere = calibrated.
+* **CITL** — the group-size-weighted mean *signed* gap. Negative = predictions
+  run high. This is the "calibration-in-the-large" a paper reports first.
+* **E50 / E90** — the median and 90th percentile of the patient-level absolute
+  error. A large ICI with a small E50 means one or two groups are badly off;
+  small E50 with a large E90 means a tail of patients is badly off.
+
+```{r calib-plot, fig.cap = "Calibration curves at the three horizons."}
+plot_surv_calibration(calibration)
+```
+
+**Reading.** There is no absolute "good" ICI; compare models, and compare the
+validation and external cohorts — a model calibrated at home and off abroad is
+the classic external-validation finding.
+
+The slope and intercept answer the same question with two parameters on the
+complementary log-log scale: `slope = 1, intercept = 0` is perfect; below 1 is
+over-confident, above 1 is timid.
+
+```{r slope}
+surv_calibration_slope(data$time, data$status, survival[, 2], time_point = 6)
+```
+
+**Do not read the coefficients when.** Fewer than ~20 patients, fewer than 5
+cases or 5 controls at the horizon: the package returns `NA` with a message.
+And even past that floor, read `n` and `events` first — a slope from 60
+patients is noise wearing a suit.
+
+## Risk strata and the log-rank test
+
+**Question.** If we split the cohort by predicted risk, do the curves
+separate? This is the figure prediction papers lead with.
+
+```{r strata, fig.cap = "Kaplan-Meier by risk tercile, log-rank p in the caption."}
+frame <- prepared
+frame$group <- surv_risk_groups(risk, k = 3)
+plot_surv_km(frame, spec, group = "group", logrank = TRUE)
+```
+
+**Reading.** Curves should separate and stay ordered (lowest risk on top).
+The log-rank p-value tests whether the separation is larger than chance.
+
+**Do not read it when.** You want a clinical threshold. The strata are
+sample-relative terciles, not decision boundaries — a patient at the Q2/Q3
+border is not a treatment decision. And a significant log-rank p-value says
+the strata differ, not that the model is calibrated: a shifted model
+separates perfectly and is still wrong. The calibration section is the one
+that answers "is the number right".
+
+## Decision curves
+
+**Question.** If we treat patients above threshold `p`, does acting on the
+model beat treating everybody and beat treating nobody?
+
+```{r dca, fig.cap = "Decision curves at the three horizons."}
+dca <- surv_dca_curves(data$time, data$status, survival, time_points)
+plot_surv_dca(dca)
+```
+
+**Reading.** Net benefit at threshold `p` is (true positives − false
+positives × p/(1−p)) / n. Compare the model curve with the treat-all curve at
+the thresholds a clinic would actually use: the model wins wherever it sits
+above treat-all. Censored patients are weighted by the censoring survival, so
+loss to follow-up is not silently counted as "no event".
+
+**Do not read it when.** The threshold range includes values no clinic would
+ever use; the y axis is clipped for exactly this reason, and the full curve
+data are in `surv_dca_curves()`'s table.
+
+## What to report, on one page
+
+| Question | Metric | Good | Read with care |
+|---|---|---|---|
+| Who is sicker (overall) | `cindex`, `uno_c` | 0.7+ | differing censoring distributions |
+| Who is sicker by horizon | `auc_t`, `auc_uno_t` | 0.7+ | small `n_case`/`n_control` |
+| Is S(t) close to the truth | `brier_t`, `ibs` | beats the KM baseline | grid dependence of `ibs` |
+| Is the number right | `ici`, `citl`, `e50`, `e90` | small; citl near 0 | group smoothing, sample size |
+| Slope and intercept | `calib_slope`, `calib_intercept` | 1 and 0 | < 100 patients: skip |
+| Does it change decisions | `dca` | above treat-all in the clinical range | threshold choice |
+| Do strata separate | stratified KM + log-rank | ordered separation | presentation only, not thresholds |
+
+## References
+
+Every statistic follows a named definition; the full list with verified DOIs
+ships in `system.file("REFERENCES.md", package = "unimlsurv")`. The ones used
+above:
+
+* Harrell FE, Lee KL, Mark DB (1996). *Statistics in Medicine* 15:361-387.
+* Uno H, Cai T, Pencina MJ, D'Agostino RB, Wei LJ (2011). *Statistics in
+  Medicine* 30:1105-1117. doi:10.1002/sim.4154
+* Uno H, Cai T, Tian L, Wei LJ (2007). *JASA* 102:527-537.
+  doi:10.1198/016214507000000149
+* Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999). *Statistics in
+  Medicine* 18:2529-2545.
+* Gerds TA, Schumacher M (2006). *Biometrical Journal* 48:1029-1040.
+  doi:10.1002/bimj.200610301
+* Heagerty PJ, Zheng Y (2005). *Biometrics* 61:92-105.
+  doi:10.1111/j.0006-341X.2005.030814.x
+* Van Calster B, McLernon DJ, van Smeden M, Wynants L, Steyerberg EW (2019).
+  *BMC Medicine* 17:230. doi:10.1186/s12916-019-1466-7
+* Austin PC, Steyerberg EW (2019). *Statistics in Medicine* 38:4051-4065.
+  doi:10.1002/sim.8281
+* Austin PC, Harrell FE Jr, van Klaveren D (2020). *Statistics in Medicine*
+  39:2714-2742. doi:10.1002/sim.8570
+* Vickers AJ, Elkin EB (2006). *Medical Decision Making* 26:565-574.
+  doi:10.1177/0272989X06295361
+* Bland JM, Altman DG (2004). *BMJ* 328:1073. doi:10.1136/bmj.328.7447.1073

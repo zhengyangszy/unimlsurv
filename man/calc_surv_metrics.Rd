@@ -10,7 +10,10 @@ calc_surv_metrics(
   risk = NULL,
   survival = NULL,
   time_points,
-  censoring = "marginal"
+  censoring = "marginal",
+  time_train = NULL,
+  status_train = NULL,
+  tau = NULL
 )
 }
 \arguments{
@@ -26,18 +29,31 @@ calc_surv_metrics(
 \item{time_points}{The time points.}
 
 \item{censoring}{Censoring model.}
+
+\item{time_train, status_train}{Optional follow-up times and event indicators
+of the \strong{training} data. Uno's estimators weight pairs by the inverse
+censoring survival estimated on the training set; without them, \code{uno_c}
+and \code{auc_uno} are reported as missing rather than estimated on the wrong
+censoring distribution.}
+
+\item{tau}{Truncation horizon for \code{uno_c}. \code{NULL} uses the largest observed
+time in the evaluation data.}
 }
 \value{
 A list with \code{overall} (a one-row data frame), \code{by_time} (one row per
-time point, including the \code{calib_intercept} and \code{calib_slope} of
-\code{surv_calibration_slope()}), \code{row} (a wide one-row data frame with
-\code{cindex}, \code{ibs}, and one \verb{brier_<t>}, \verb{auc_<t>}, \verb{calib_intercept_<t>}, and
-\verb{calib_slope_<t>} column per time point), and \code{n}/\code{n_events}.
+time point, including the calibration statistics and the
+\code{calib_intercept} and \code{calib_slope} of \code{surv_calibration_slope()}), \code{row}
+(a wide one-row data frame with \code{cindex}, \code{ibs}, \code{uno_c}, \code{iauc},
+\code{iauc_uno}, and one \verb{brier_<t>}, \verb{auc_<t>}, \verb{auc_uno_<t>}, \verb{citl_<t>},
+\verb{e50_<t>}, \verb{e90_<t>}, \verb{calib_intercept_<t>}, and \verb{calib_slope_<t>} column
+per time point), and \code{n}/\code{n_events}.
 }
 \description{
 The one function every table and figure goes through. It reports the
-concordance index, the integrated Brier score, and, at each requested time
-point, the Brier score and the cumulative/dynamic AUC.
+concordance index, Uno's concordance index, the integrated Brier score, the
+integrated AUC, and, at each requested time point, the Brier score, the
+cumulative/dynamic AUC, Uno's AUC, and the calibration statistics
+(\code{citl}, \code{e50}, \code{e90}, \code{calib_intercept}, \code{calib_slope}).
 }
 \examples{
 data <- sim_surv_data(n = 200, seed = 1)

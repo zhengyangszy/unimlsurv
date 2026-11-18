@@ -16,8 +16,12 @@
 #'
 #' @param data A data frame, or a `unimlsurv_data` object.
 #' @param spec A specification created by [surv_spec()].
-#' @param group Optional column name to compare groups.
+#' @param group Optional column name to compare groups. Pass a column created
+#'   with [surv_risk_groups()] to draw the stratified Kaplan-Meier figure that
+#'   prediction papers report.
 #' @param conf_int Whether to draw the pointwise confidence band.
+#' @param logrank Whether to add the two-sided log-rank test p-value to the
+#'   caption when `group` is supplied.
 #' @param palette Optional vector of colours.
 #'
 #' @return A `ggplot` object.
@@ -25,6 +29,9 @@
 #' Kaplan EL, Meier P (1958). Nonparametric estimation from incomplete
 #' observations. *Journal of the American Statistical Association*, 53(282),
 #' 457-481. doi:10.1080/01621459.1958.10501452
+#'
+#' Bland JM, Altman DG (2004). The logrank test. *BMJ*, 328(7447), 1073.
+#' doi:10.1136/bmj.328.7447.1073
 #'
 #' Pocock SJ, Clayton TC, Altman DG (2002). Survival plots of time-to-event
 #' outcomes in clinical trials: good practice and pitfalls. *The Lancet*,
@@ -35,7 +42,7 @@
 #' spec <- surv_spec(time = "time", status = "status")
 #' plot_surv_km(data, spec, group = "sex")
 plot_surv_km <- function(data, spec, group = NULL, conf_int = FALSE,
-                         palette = NULL) {
+                         logrank = FALSE, palette = NULL) {
   validate_surv_spec(spec)
   block <- spec$survival
   frame <- if (inherits(data, "unimlsurv_data")) data$data else data
@@ -87,6 +94,23 @@ plot_surv_km <- function(data, spec, group = NULL, conf_int = FALSE,
       fill = if (is.null(group)) NULL else group
     ) +
     uniml::theme_uniml()
+  if (!is.null(group) && isTRUE(logrank)) {
+    test <- tryCatch(
+      survival::survdiff(
+        survival::Surv(time, status) ~ frame$group,
+        data = frame
+      ),
+      error = function(e) NULL
+    )
+    if (!is.null(test)) {
+      p_value <- stats::pchisq(test$chisq, df = length(test$n) - 1L,
+                               lower.tail = FALSE)
+      graph <- graph + ggplot2::labs(
+        caption = sprintf("Log-rank test: p = %.3g", p_value)
+      )
+    }
+  }
+  graph
 }
 
 .surv_curve_frame <- function(fit) {

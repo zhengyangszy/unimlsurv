@@ -179,6 +179,12 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
   }
 
   sets <- engine$prepared
+  # Uno's estimators weight pairs by the inverse censoring survival of the
+  # *training* data, so the training outcome columns travel with every call
+  # to `calc_surv_metrics()` below.
+  train_data <- if (!is.null(sets$train)) sets$train$data else NULL
+  time_train <- if (is.null(train_data)) NULL else as.numeric(train_data[[block$time]])
+  status_train <- if (is.null(train_data)) NULL else as.integer(train_data[[block$status]])
   metric_rows <- list()
   by_time_rows <- list()
   predictions <- list()
@@ -220,7 +226,10 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
         risk = pooled$risk,
         survival = pooled$survival,
         time_points = time_points,
-        censoring = block$censoring_model
+        censoring = block$censoring_model,
+        time_train = time_train,
+        status_train = status_train,
+        tau = max(time_points)
       )
       row <- data.frame(
         model = key,
@@ -234,8 +243,8 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
       by_time$model <- key
       by_time$set <- set
       by_time_rows[[length(by_time_rows) + 1L]] <- by_time[, c(
-        "model", "set", "time", "brier", "auc", "calib_intercept",
-        "calib_slope", "n_case", "n_control"
+        "model", "set", "time", "brier", "auc", "auc_uno", "citl", "e50",
+        "e90", "calib_intercept", "calib_slope", "n_case", "n_control"
       )]
       predictions[[paste0(key, ":", set)]] <- list(
         model = key,

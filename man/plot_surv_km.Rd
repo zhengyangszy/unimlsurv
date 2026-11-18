@@ -4,16 +4,28 @@
 \alias{plot_surv_km}
 \title{Kaplan-Meier curves}
 \usage{
-plot_surv_km(data, spec, group = NULL, conf_int = FALSE, palette = NULL)
+plot_surv_km(
+  data,
+  spec,
+  group = NULL,
+  conf_int = FALSE,
+  logrank = FALSE,
+  palette = NULL
+)
 }
 \arguments{
 \item{data}{A data frame, or a \code{unimlsurv_data} object.}
 
 \item{spec}{A specification created by \code{\link[=surv_spec]{surv_spec()}}.}
 
-\item{group}{Optional column name to compare groups.}
+\item{group}{Optional column name to compare groups. Pass a column created
+with \code{\link[=surv_risk_groups]{surv_risk_groups()}} to draw the stratified Kaplan-Meier figure that
+prediction papers report.}
 
 \item{conf_int}{Whether to draw the pointwise confidence band.}
+
+\item{logrank}{Whether to add the two-sided log-rank test p-value to the
+caption when \code{group} is supplied.}
 
 \item{palette}{Optional vector of colours.}
 }
@@ -32,6 +44,9 @@ plot_surv_km(data, spec, group = "sex")
 Kaplan EL, Meier P (1958). Nonparametric estimation from incomplete
 observations. \emph{Journal of the American Statistical Association}, 53(282),
 457-481. doi:10.1080/01621459.1958.10501452
+
+Bland JM, Altman DG (2004). The logrank test. \emph{BMJ}, 328(7447), 1073.
+doi:10.1136/bmj.328.7447.1073
 
 Pocock SJ, Clayton TC, Altman DG (2002). Survival plots of time-to-event
 outcomes in clinical trials: good practice and pitfalls. \emph{The Lancet},

@@ -1,7 +1,7 @@
 Package: unimlsurv
 Type: Package
 Title: Survival Analysis Modelling with 'mlr3'
-Version: 0.2.2
+Version: 0.3.0
 Authors@R: person("Steve", "Shi", email = "19943405117@163.com", role =
         c("aut", "cre"))
 Author: Steve Shi [aut, cre]
@@ -11,13 +11,15 @@ Description: A time-to-event counterpart to 'uniml' with the same
         with the 'mlr3' stack, imputation, scaling, and encoding are
         fitted on the training data only, and the reported statistics
         are the ones the survival literature actually defines:
-        Harrell's concordance index, the
+        Harrell's and Uno's concordance indices, the
         inverse-probability-of-censoring weighted Brier score of Graf
         and colleagues, the integrated Brier score, the
-        cumulative/dynamic time-dependent area under the ROC curve,
-        time-point calibration against Kaplan-Meier estimates, and
-        time-point decision-curve analysis. All time points are chosen
-        by the user.
+        cumulative/dynamic and Uno time-dependent areas under the ROC
+        curve with their integrated versions, time-point calibration
+        against Kaplan-Meier estimates with the integrated calibration
+        index and related measures, stratified Kaplan-Meier plots with
+        the log-rank test, and time-point decision-curve analysis. All
+        time points are chosen by the user.
 License: MIT + file LICENSE
 URL: https://github.com/zhengyangszy/unimlsurv
 BugReports: https://github.com/zhengyangszy/unimlsurv/issues
@@ -27,7 +29,7 @@ Depends: R (>= 4.1)
 Imports: mlr3, mlr3proba, mlr3tuning, paradox, survival, ggplot2,
         rlang, stats, utils, uniml (>= 0.4.0)
 Suggests: kernelshap, shapviz, mlr3learners, mlr3extralearners, ranger,
-        riskRegression, pec, prodlim, testthat (>= 3.0.0), knitr,
+        riskRegression, pec, prodlim, survAUC, testthat (>= 3.0.0), knitr,
         rmarkdown
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0

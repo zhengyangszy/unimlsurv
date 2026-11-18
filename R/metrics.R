@@ -278,8 +278,10 @@ surv_ibs <- function(time, status, survival, time_points, censoring = "marginal"
 #' Calculate survival metrics
 #'
 #' The one function every table and figure goes through. It reports the
-#' concordance index, the integrated Brier score, and, at each requested time
-#' point, the Brier score and the cumulative/dynamic AUC.
+#' concordance index, Uno's concordance index, the integrated Brier score, the
+#' integrated AUC, and, at each requested time point, the Brier score, the
+#' cumulative/dynamic AUC, Uno's AUC, and the calibration statistics
+#' (`citl`, `e50`, `e90`, `calib_intercept`, `calib_slope`).
 #'
 #' @param time Follow-up times.
 #' @param status Event indicator.
@@ -288,12 +290,21 @@ surv_ibs <- function(time, status, survival, time_points, censoring = "marginal"
 #'   `time_points` has length one.
 #' @param time_points The time points.
 #' @param censoring Censoring model.
+#' @param time_train,status_train Optional follow-up times and event indicators
+#'   of the **training** data. Uno's estimators weight pairs by the inverse
+#'   censoring survival estimated on the training set; without them, `uno_c`
+#'   and `auc_uno` are reported as missing rather than estimated on the wrong
+#'   censoring distribution.
+#' @param tau Truncation horizon for `uno_c`. `NULL` uses the largest observed
+#'   time in the evaluation data.
 #'
 #' @return A list with `overall` (a one-row data frame), `by_time` (one row per
-#'   time point, including the `calib_intercept` and `calib_slope` of
-#'   `surv_calibration_slope()`), `row` (a wide one-row data frame with
-#'   `cindex`, `ibs`, and one `brier_<t>`, `auc_<t>`, `calib_intercept_<t>`, and
-#'   `calib_slope_<t>` column per time point), and `n`/`n_events`.
+#'   time point, including the calibration statistics and the
+#'   `calib_intercept` and `calib_slope` of `surv_calibration_slope()`), `row`
+#'   (a wide one-row data frame with `cindex`, `ibs`, `uno_c`, `iauc`,
+#'   `iauc_uno`, and one `brier_<t>`, `auc_<t>`, `auc_uno_<t>`, `citl_<t>`,
+#'   `e50_<t>`, `e90_<t>`, `calib_intercept_<t>`, and `calib_slope_<t>` column
+#'   per time point), and `n`/`n_events`.
 #' @references
 #' Steyerberg EW (2019). *Clinical Prediction Models: A Practical Approach to
 #' Development, Validation, and Updating*, 2nd edition. Springer.
@@ -306,8 +317,11 @@ surv_ibs <- function(time, status, survival, time_points, censoring = "marginal"
 #'   data$time, data$status, truth$risk, truth$survival, c(12, 36, 60)
 #' )
 #' metrics$overall
+#' @export
 calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
-                              time_points, censoring = "marginal") {
+                              time_points, censoring = "marginal",
+                              time_train = NULL, status_train = NULL,
+                              tau = NULL) {
   .assert_numeric_vector(time_points, "time_points", min = 0)
   if (!is.null(survival)) {
     survival <- as.matrix(survival)
@@ -320,12 +334,23 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
     }
   }
   if (is.null(survival)) {
-    # A learner that predicts only a risk score still has a concordance index;
-    # everything that needs survival probabilities is reported as unavailable.
+    # A learner that predicts only a risk score still has a concordance index
+    # and Uno's C; everything that needs survival probabilities is reported
+    # as unavailable.
+    uno_c <- if (!is.null(time_train) && !is.null(status_train) &&
+                 !is.null(risk)) {
+      surv_cindex_uno(time_train, status_train, time, status, risk, tau = tau)
+    } else {
+      NA_real_
+    }
     by_time <- data.frame(
       time = as.numeric(time_points),
       brier = NA_real_,
       auc = NA_real_,
+      auc_uno = NA_real_,
+      citl = NA_real_,
+      e50 = NA_real_,
+      e90 = NA_real_,
       calib_intercept = NA_real_,
       calib_slope = NA_real_,
       n_case = vapply(time_points, function(t0) sum(status == 1L & time <= t0),
@@ -339,6 +364,9 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
       n_events = sum(status == 1L),
       cindex = if (is.null(risk)) NA_real_ else surv_cindex(time, status, risk),
       ibs = NA_real_,
+      uno_c = uno_c,
+      iauc = NA_real_,
+      iauc_uno = NA_real_,
       stringsAsFactors = FALSE,
       row.names = NULL
     )
@@ -347,10 +375,30 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
       label <- format(by_time$time[[index]], trim = TRUE)
       row[[paste0("brier_", label)]] <- NA_real_
       row[[paste0("auc_", label)]] <- NA_real_
+      row[[paste0("auc_uno_", label)]] <- NA_real_
+      row[[paste0("citl_", label)]] <- NA_real_
+      row[[paste0("e50_", label)]] <- NA_real_
+      row[[paste0("e90_", label)]] <- NA_real_
       row[[paste0("calib_intercept_", label)]] <- NA_real_
       row[[paste0("calib_slope_", label)]] <- NA_real_
     }
     return(list(overall = overall, by_time = by_time, row = row))
+  }
+  has_train <- !is.null(time_train) && !is.null(status_train)
+  calibrations <- lapply(seq_along(time_points), function(index) {
+    surv_calibration(
+      time, status, survival[, index], time_points[[index]],
+      groups = 10L, censoring = censoring
+    )
+  })
+  slopes <- lapply(seq_along(time_points), function(index) {
+    surv_calibration_slope(
+      time, status, survival[, index], time_points[[index]],
+      censoring = censoring
+    )
+  })
+  pick <- function(name) {
+    vapply(calibrations, function(result) result[[name]], numeric(1))
   }
   by_time <- data.frame(
     time = as.numeric(time_points),
@@ -362,18 +410,19 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
       surv_auc(time, status, survival[, index], time_points[[index]],
                censoring = censoring)
     }, numeric(1)),
-    calib_intercept = vapply(seq_along(time_points), function(index) {
-      surv_calibration_slope(
-        time, status, survival[, index], time_points[[index]],
-        censoring = censoring
-      )$intercept
+    auc_uno = vapply(seq_along(time_points), function(index) {
+      if (!has_train) {
+        return(NA_real_)
+      }
+      surv_auc_uno(time_train, status_train, time, status,
+                   survival[, index], time_points[[index]])
     }, numeric(1)),
-    calib_slope = vapply(seq_along(time_points), function(index) {
-      surv_calibration_slope(
-        time, status, survival[, index], time_points[[index]],
-        censoring = censoring
-      )$slope
-    }, numeric(1)),
+    citl = pick("citl"),
+    e50 = pick("e50"),
+    e90 = pick("e90"),
+    calib_intercept = vapply(slopes, function(result) result$intercept,
+                             numeric(1)),
+    calib_slope = vapply(slopes, function(result) result$slope, numeric(1)),
     n_case = vapply(time_points, function(t0) {
       sum(status == 1L & time <= t0)
     }, integer(1)),
@@ -385,11 +434,19 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
   )
   cindex <- if (is.null(risk)) NA_real_ else surv_cindex(time, status, risk)
   ibs <- surv_ibs(time, status, survival, time_points, censoring = censoring)
+  uno_c <- if (has_train && !is.null(risk)) {
+    surv_cindex_uno(time_train, status_train, time, status, risk, tau = tau)
+  } else {
+    NA_real_
+  }
   overall <- data.frame(
     n = length(time),
     n_events = sum(status == 1L),
     cindex = cindex,
     ibs = ibs,
+    uno_c = uno_c,
+    iauc = .trapz_scaled(time_points, by_time$auc),
+    iauc_uno = .trapz_scaled(time_points, by_time$auc_uno),
     stringsAsFactors = FALSE,
     row.names = NULL
   )
@@ -398,8 +455,52 @@ calc_surv_metrics <- function(time, status, risk = NULL, survival = NULL,
     label <- format(by_time$time[[index]], trim = TRUE)
     row[[paste0("brier_", label)]] <- by_time$brier[[index]]
     row[[paste0("auc_", label)]] <- by_time$auc[[index]]
+    row[[paste0("auc_uno_", label)]] <- by_time$auc_uno[[index]]
+    row[[paste0("citl_", label)]] <- by_time$citl[[index]]
+    row[[paste0("e50_", label)]] <- by_time$e50[[index]]
+    row[[paste0("e90_", label)]] <- by_time$e90[[index]]
     row[[paste0("calib_intercept_", label)]] <- by_time$calib_intercept[[index]]
     row[[paste0("calib_slope_", label)]] <- by_time$calib_slope[[index]]
   }
   list(overall = overall, by_time = by_time, row = row)
+}
+
+#' Risk groups for stratified Kaplan-Meier plots
+#'
+#' Splits patients into `k` groups of equal size by their risk score, lowest
+#' risk first. The groups are a **presentation** device for the stratified
+#' Kaplan-Meier figure that prediction papers report; the group boundaries
+#' depend on the sample and must never be reused as a clinical threshold.
+#'
+#' @param risk Risk score; higher means shorter survival.
+#' @param k Number of groups (3 gives the terciles most papers use).
+#' @param labels Optional group labels; the default is `Q1`, `Q2`, ... with
+#'   `Q1` the lowest-risk group.
+#'
+#' @return A factor with one level per group.
+#' @examples
+#' data <- sim_surv_data(n = 200, seed = 1)
+#' truth <- sim_surv_truth(data, 12)
+#' table(surv_risk_groups(truth$risk, k = 3))
+#' @export
+surv_risk_groups <- function(risk, k = 3L, labels = NULL) {
+  .assert_numeric_vector(risk)
+  .assert_scalar_number(k, "k", integer = TRUE, min = 2)
+  if (anyNA(risk)) {
+    .abort("`risk` must not contain missing values.")
+  }
+  breaks <- unique(stats::quantile(
+    risk,
+    probs = seq(0, 1, length.out = k + 1L),
+    names = FALSE
+  ))
+  if (length(breaks) < k + 1L) {
+    .abort("The risk score does not vary enough to form the requested groups.")
+  }
+  bins <- cut(risk, breaks = breaks, include.lowest = TRUE, labels = FALSE)
+  names <- if (is.null(labels)) paste0("Q", seq_len(k)) else labels
+  if (length(names) != k) {
+    .abort("`labels` must have one name per group.")
+  }
+  factor(names[bins], levels = names)
 }

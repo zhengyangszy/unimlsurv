@@ -1,3 +1,56 @@
+# unimlsurv 0.3.0
+
+The metrics a survival prediction paper is expected to report, with every new
+number pinned by a test against an independent implementation.
+
+## Uno's IPCW concordance index and AUC
+
+* New `surv_cindex_uno()` implements the censoring-adjusted concordance index
+  of Uno et al. (2011, doi:10.1002/sim.4154) at a truncation horizon. The
+  inverse *squared* censoring survival is estimated on the **training** data —
+  part of the definition — and risk ties are discarded, exactly as
+  `survAUC::UnoC()` does. The test pins the two to machine precision.
+* New `surv_auc_uno()` is Uno's IPCW cumulative/dynamic AUC
+  (Uno et al. 2007, doi:10.1198/016214507000000149), and `surv_iauc_uno()`
+  integrates it over the requested time points with the trapezoidal rule (the
+  same grid dependence as `surv_ibs()`). Both are pinned to
+  `survAUC::AUC.uno()` to machine precision.
+
+## Integrated AUC and calibration statistics in every table
+
+* `calc_surv_metrics()` gains optional `time_train`/`status_train` (and `tau`)
+  arguments. `overall` now carries `uno_c`, `iauc` (trapezoidal integral of the
+  per-time AUCs, divided by the grid width, same convention as `ibs`) and
+  `iauc_uno`; `by_time` carries `auc_uno`, `citl`, `e50`, and `e90` next to
+  `brier`, `auc`, `calib_intercept`, and `calib_slope`. `surv_ci()` bootstraps
+  every new column automatically. Without training data the Uno columns stay
+  missing rather than being estimated on the wrong censoring distribution.
+* `run_surv_workflow()` passes the training outcome columns, so
+  `result$metrics` and `result$meta$by_time` carry the new columns for every
+  model and set. A risk-only model (for example `rpart`) now also gets `uno_c`.
+* `surv_calibration()` returns `citl` (calibration-in-the-large, the
+  group-size-weighted mean signed difference), `e50`, and `e90` (median and
+  90th percentile of the patient-level absolute error, with each patient's
+  observed value taken from their prediction group's Kaplan-Meier estimate —
+  the grouped analogue of the smoothed curve in Austin et al. 2019,
+  doi:10.1002/sim.8281, and Austin, Harrell & van Klaveren 2020,
+  doi:10.1002/sim.8570). `surv_calibration_curves()$summary` carries them.
+
+## Stratified Kaplan-Meier with the log-rank test
+
+* New `surv_risk_groups()` splits patients into `k` equal-sized risk strata
+  for the stratified Kaplan-Meier figure that prediction papers report.
+  `plot_surv_km()` gains `logrank = TRUE`, which adds the two-sided log-rank
+  p-value (Bland & Altman 2004, doi:10.1136/bmj.328.7447.1073) to the caption.
+
+## Corrected reference
+
+* The calibration references cited a DOI (`10.1002/sim.8356`) that belongs to
+  an unrelated paper on restricted mean survival time. The calibration section
+  now cites the correct sources: Austin & Steyerberg (2019,
+  doi:10.1002/sim.8281) and Austin, Harrell & van Klaveren (2020,
+  doi:10.1002/sim.8570).
+
 # unimlsurv 0.2.2
 
 Time-point recalibration coefficients, the survival counterpart of the binary

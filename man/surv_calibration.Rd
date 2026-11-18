@@ -27,8 +27,9 @@ surv_calibration(
 \item{censoring}{Censoring model, kept for symmetry with the other metrics.}
 }
 \value{
-A list with \code{table} (one row per group), \code{ici}, \code{n}, \code{events}, and a
-\code{message} when the calibration is not estimable.
+A list with \code{table} (one row per group), \code{ici}, \code{citl}, \code{e50},
+\code{e90}, \code{n}, \code{events}, and a \code{message} when the calibration is not
+estimable.
 }
 \description{
 Compares predicted survival probabilities with observed survival at one time
@@ -41,6 +42,16 @@ The summary is the integrated calibration index (ICI): the number of patients
 in a group times the absolute difference between observed and predicted
 survival, summed over groups and divided by the total. A value of 0 means the
 predictions sit on the Kaplan-Meier curve.
+
+Three companion statistics from the same paper are reported alongside it.
+\code{citl} is calibration-in-the-large, the group-size-weighted mean of
+\code{observed - predicted}: negative means the predictions are too high on
+average. \code{e50} and \code{e90} are the median and the 90th percentile of the
+absolute patient-level error, where each patient's observed value is the
+Kaplan-Meier estimate of the group their prediction falls in — the grouped
+analogue of the smoothed curve in the paper. A large ICI with a small E50
+means a few groups are badly off; the reverse means small errors are spread
+everywhere.
 }
 \examples{
 data <- sim_surv_data(n = 200, seed = 1)
@@ -54,7 +65,12 @@ Van Calster B, McLernon DJ, van Smeden M, Wynants L, Steyerberg EW (2019).
 Calibration: the Achilles heel of predictive analytics. \emph{BMC Medicine}, 17,
 230. doi:10.1186/s12916-019-1466-7
 
+Austin PC, Harrell FE Jr, van Klaveren D (2020). Graphical calibration curves
+and the integrated calibration index (ICI) for survival models.
+\emph{Statistics in Medicine}, 39(21), 2714-2742. doi:10.1002/sim.8570
+
 Austin PC, Steyerberg EW (2019). The integrated calibration index (ICI) and
-related metrics for assessing the calibration of survival models with binary
-outcomes. \emph{Statistics in Medicine}, 38(28), 5476-5494. doi:10.1002/sim.8356
+related metrics for quantifying the calibration of logistic regression
+models. \emph{Statistics in Medicine}, 38(21), 4051-4065.
+doi:10.1002/sim.8281
 }

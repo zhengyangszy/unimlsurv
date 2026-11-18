@@ -1,0 +1,257 @@
+---
+title: "unimlsurv 的每一个指标，逐个讲透"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+vignette: >
+  %\VignetteIndexEntry{unimlsurv 的每一个指标，逐个讲透}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4.5
+)
+suppressPackageStartupMessages({
+  library(unimlsurv)
+  library(mlr3)
+})
+```
+
+本教程把 `unimlsurv` 产出的每个数字单独拆开讲。每节回答同样的三个问题：
+
+1. **这个数字在回答什么问题？**（没有公式）
+2. **怎么读？**（好的值、坏的值、什么会动它）
+3. **什么时候别读？**（样本小、删失重、随访撑不住的时点）
+
+所有例子用同一个 300 人的模拟队列——**真值已知**，每个数字都能拿产生数据的
+模型来核对。工作流的完整用法见主教程
+`vignette("unimlsurv-zh", package = "unimlsurv")`。
+
+```{r data}
+data <- sim_surv_data(n = 300, seed = 2026)
+time_points <- c(3, 6, 12)
+truth <- sim_surv_truth(data, time_points)
+
+## 整个教程共用一个拟合好的 Cox 模型
+spec <- surv_spec(time = "time", status = "status", time_points = time_points)
+prepared <- as_surv_data(data, spec)
+task <- make_surv_task(prepared, spec)
+fitted <- train_surv(task, mlr3::lrn("surv.coxph"))
+prediction <- fitted$predict(task)
+survival <- survival_matrix(prediction, time_points)
+risk <- survival_risk(prediction)
+```
+
+## 三十秒讲完删失
+
+生存结局是两列：观察了多久、有没有出事。8 个月后搬走的病人，既不是"8 个月时
+还活着"，也不是"8 个月时死了"——记录只说"前 8 个月没出事"。删失病人仍然携带
+信息（到最后一次接触为止他确实没出事），本包的每个指标都正确地用上这个信息：
+要么把无法提供信息的比较剔掉（C 指数），要么用删失生存反概率重加权。
+**包永远不会允许你把结局变成普通的 0/1 列**。
+
+## 判别（上）：Harrell's C
+
+**问题。**当一个病人比另一个先出事，模型把病得更重的那位排 higher 了吗？
+
+```{r harrell}
+surv_cindex(data$time, data$status, risk)
+```
+
+**怎么读。**0.5 = 抛硬币；0.6 弱；0.7 可用；临床数据 0.75 以上算好。真实队列
+里永远不会出现 0 或 1。只有"先出事者能定序"的配对才可比较——删失病人只通过
+他没出事的那段时间参与配对。
+
+**什么时候别读。**两个队列的删失分布不同：可比较对的集合就不同，同一个模型
+会因删失而拿到不同的 C——这正是 Uno C 要补的洞，所以论文两个并报。
+
+```{r truth-c}
+## 给真值本身打同样的分——这是这份数据允许的上限
+surv_cindex(data$time, data$status, truth$risk)
+```
+
+真值在这份数据上约 `r round(surv_cindex(data$time, data$status, truth$risk), 2)`
+分：这就是噪声和删失给的天花板，好模型应该贴着它。
+
+## 判别（下）：Uno's C
+
+**问题。**同一个问题，但把对删失的依赖去掉。Uno's C（2011）在截断点 `tau`
+处分析，每个事件病人按**训练集**估计的删失生存反**平方**加权，risk 打平的
+配对直接丢弃。
+
+```{r uno-c}
+set.seed(7)
+index <- sample.int(nrow(data), 150)
+surv_cindex_uno(
+  time_train = data$time[-index], status_train = data$status[-index],
+  time_test = data$time[index], status_test = data$status[index],
+  risk_test = risk[index]
+)
+```
+
+**怎么读。**量纲与 Harrell C 相同。论文并报；两者分歧时，分歧在删失，不在
+模型。训练数据是**定义的一部分**——包拒绝在评估集上估计权重，因为那是另一个
+（错误的）删失分布。
+
+**什么时候别读。**`tau` 超出训练随访：删失生存变 0、病人被剔除——参考实现
+也是这么处理的。把 `tau` 放在训练随访范围之内。
+
+## 随时间变化的判别：时点 AUC
+
+**问题。**在你选的决策点 `t`，模型分得开"到 `t` 已出事"和"到 `t` 还没出事"
+这两群人吗？这是临床决策点上问的问题，而且是**局部的**：全程 C 极好、你关心的
+时点 AUC 很差，完全可能。
+
+```{r tdauc}
+metrics <- calc_surv_metrics(
+  data$time, data$status, risk, survival, time_points
+)
+metrics$by_time[, c("time", "n_case", "n_control", "auc", "auc_uno")]
+```
+
+**怎么读。**还是 0.5 = 抛硬币。盯住 `n_case` 和 `n_control`：建立在 3 个病例
+上的 AUC 是噪声。cumulative/dynamic AUC（`auc`）用评估集自己估的删失权重；
+Uno 的 `auc_uno` 用**训练集**的删失曲线给 case 加权。小验证集上两者分歧时，
+两个都报。
+
+数字背后的 ROC 曲线也拿得到——数字与图不可能分叉：
+
+```{r roc, fig.cap = "6 个月时的 cumulative/dynamic ROC。"}
+curve <- surv_roc_curve(data$time, data$status, survival[, 2], 6)
+head(curve, 3)
+```
+
+**什么时候别读。**`n_case` 或 `n_control` 太小，或时点在随访之外：包直接返回
+`NA`，不给一个谁也没法辩护的数。
+
+## 预测误差：Brier 与 IBS
+
+**问题。**预测的 S(t) 离实际发生了什么近吗？与 AUC 不同，这是严格 proper
+scoring rule：只有真的更接近真相才能改善它。
+
+```{r brier}
+metrics$by_time[, c("time", "brier")]
+```
+
+**怎么读。**越低越好；给所有人预测 0.5 的模型得 0.25，而基准线是 Kaplan-Meier
+估计器的 Brier（"完全不看特征"的基线）——模型必须打赢它才有存在价值。
+`ibs` 把 Brier 在你的网格上积分并除以网格宽度，保持在 Brier 量纲——它继承
+网格：两篇论文用不同网格，同一个模型的 IBS 就不同。
+
+**什么时候别读。**模型根本不产出生存概率——纯风险分模型在这里是 `NA`，故意
+的：编一个分布出来比承认没有更糟。
+
+## 校准：数字对不对
+
+**问题。**模型说 S(t) = 0.8 时，这样的病人真的有 80% 活过 `t` 吗？
+
+```{r calibration}
+calibration <- surv_calibration_curves(
+  data$time, data$status, survival, time_points
+)
+calibration$summary
+```
+
+每时点四个数，全部来自同一个分组比较（分组只按**预测**，绝不按结局）：
+
+* **ICI**——病人加权的 |预测 − 组内 Kaplan-Meier 观测| 平均。处处小 = 校准好。
+* **CITL**——组内 `observed − predicted` 按组人数加权的平均，带符号。负 =
+  预测整体偏高。论文里最先报的 calibration-in-the-large 就是它。
+* **E50 / E90**——病人级绝对误差的中位数与 90 分位。ICI 大而 E50 小 = 一两个
+  组烂得离谱；E50 小而 E90 大 = 一撮病人烂得离谱。
+
+```{r calib-plot, fig.cap = "三个时点的校准曲线。"}
+plot_surv_calibration(calibration)
+```
+
+**怎么读。**ICI 没有绝对的"好"；要比的是模型之间、validation 与 external
+之间——"家里校准好、出去就漂"正是外部验证最经典的发现。
+
+斜率与截距用两个参数在 cloglog 尺度上回答同一个问题：
+`slope = 1, intercept = 0` 完美；< 1 过度自信，> 1 过于保守。
+
+```{r slope}
+surv_calibration_slope(data$time, data$status, survival[, 2], time_point = 6)
+```
+
+**什么时候别读系数。**病人少于 ~20、时点病例或对照少于 5：包返回 `NA` 并附
+说明。就算过了线，也先读 `n` 和 `events`——60 个病人拟出的斜率是穿着西装的
+噪声。
+
+## 风险分层与 log-rank 检验
+
+**问题。**按预测风险把队列切开，曲线分得开吗？预测模型论文用它开场。
+
+```{r strata, fig.cap = "按风险三分位的 Kaplan-Meier，脚注带 log-rank p。"}
+frame <- prepared
+frame$group <- surv_risk_groups(risk, k = 3)
+plot_surv_km(frame, spec, group = "group", logrank = TRUE)
+```
+
+**怎么读。**曲线应分开且保持次序（最低风险在最上面）。log-rank p 检验
+分开程度是否超出偶然。
+
+**什么时候别读。**你想要一个临床阈值时。分层是相对样本的三分位，不是决策
+边界——Q2/Q3 边界上的病人不是一个治疗决定。而且 log-rank 显著只说明分层
+分得开，不说明模型校准：一个整体偏移的模型分层照样完美，数字照样是错的。
+"数字对不对"由校准那节回答。
+
+## 决策曲线
+
+**问题。**若对预测概率高于阈值 `p` 的病人采取行动，按模型行动是否胜过
+"全治"和"全不治"？
+
+```{r dca, fig.cap = "三个时点的决策曲线。"}
+dca <- surv_dca_curves(data$time, data$status, survival, time_points)
+plot_surv_dca(dca)
+```
+
+**怎么读。**阈值 `p` 处的净获益 =（真阳性 − 假阳性 × p/(1−p)）/ n。在临床
+真的会用的阈值范围内，把模型曲线与 treat-all 曲线比：模型在位于 treat-all
+上方的区间内值得用。删失病人按删失生存加权——失访不会被悄悄当成"没出事"。
+
+**什么时候别读。**阈值范围包含任何临床永远不会用的值；y 轴为此裁剪，完整
+曲线数据都在 `surv_dca_curves()` 的表里。
+
+## 一页速查：论文报什么
+
+| 问题 | 指标 | 好 | 读的时候小心 |
+|---|---|---|---|
+| 谁病得更重（全程） | `cindex`、`uno_c` | 0.7+ | 删失分布不同 |
+| 谁病得更重（按节点） | `auc_t`、`auc_uno_t` | 0.7+ | `n_case`/`n_control` 小 |
+| S(t) 离真相近不近 | `brier_t`、`ibs` | 打赢 KM 基线 | `ibs` 依赖网格 |
+| 数字对不对 | `ici`、`citl`、`e50`、`e90` | 小；citl 近 0 | 组平滑、样本量 |
+| 斜率与截距 | `calib_slope`、`calib_intercept` | 1 和 0 | < 100 人别读 |
+| 改变决策了吗 | `dca` | 临床区间高于 treat-all | 阈值选择 |
+| 分层分得开吗 | 分层 KM + log-rank | 次序分明 | 只是展示，不是阈值 |
+
+## 参考文献
+
+每个统计量都跟一个写明的定义；带核实 DOI 的完整清单在
+`system.file("REFERENCES.md", package = "unimlsurv")`。上文用到的：
+
+* Harrell FE, Lee KL, Mark DB (1996). *Statistics in Medicine* 15:361-387.
+* Uno H, Cai T, Pencina MJ, D'Agostino RB, Wei LJ (2011). *Statistics in
+  Medicine* 30:1105-1117. doi:10.1002/sim.4154
+* Uno H, Cai T, Tian L, Wei LJ (2007). *JASA* 102:527-537.
+  doi:10.1198/016214507000000149
+* Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999). *Statistics in
+  Medicine* 18:2529-2545.
+* Gerds TA, Schumacher M (2006). *Biometrical Journal* 48:1029-1040.
+  doi:10.1002/bimj.200610301
+* Heagerty PJ, Zheng Y (2005). *Biometrics* 61:92-105.
+  doi:10.1111/j.0006-341X.2005.030814.x
+* Van Calster B, McLernon DJ, van Smeden M, Wynants L, Steyerberg EW (2019).
+  *BMC Medicine* 17:230. doi:10.1186/s12916-019-1466-7
+* Austin PC, Steyerberg EW (2019). *Statistics in Medicine* 38:4051-4065.
+  doi:10.1002/sim.8281
+* Austin PC, Harrell FE Jr, van Klaveren D (2020). *Statistics in Medicine*
+  39:2714-2742. doi:10.1002/sim.8570
+* Vickers AJ, Elkin EB (2006). *Medical Decision Making* 26:565-574.
+  doi:10.1177/0272989X06295361
+* Bland JM, Altman DG (2004). *BMJ* 328:1073. doi:10.1136/bmj.328.7447.1073

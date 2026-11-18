@@ -23,12 +23,14 @@ suppressPackageStartupMessages({
 ```
 
 `unimlsurv` is the time-to-event counterpart to `uniml`. It keeps the same
-layering — specification, data, task, learners, tuning, metrics, plots, workflow
-— so if you know one package you know the other. What changes is the outcome and
-therefore what "correct" means.
+layering — specification, data, task, learners, tuning, metrics, plots,
+workflow — so if you know one package you know the other. What changes is the
+outcome and therefore what "correct" means.
 
 This vignette uses a simulated cohort with a known truth throughout, so every
-number can be checked against the model that generated it.
+number can be checked against the model that generated it. A companion
+vignette, `vignette("unimlsurv-metrics", package = "unimlsurv")`, walks through
+each metric one at a time with more explanation and fewer moving parts.
 
 ## What a survival outcome is
 
@@ -38,26 +40,36 @@ Two columns, not one:
 * the **status**: `1` if the event happened at that time, `0` if the patient was
   censored at that time.
 
-Censoring is why survival statistics are not classification statistics. A patient
-censored at 10 months is not a patient who survived 10 months and it is not a
-patient who died at 10 months. Every metric in this package either drops
-censored patients from a comparison it cannot inform (the concordance index) or
-weights them by the inverse of the censoring survival (Brier score, time-dependent
-AUC, calibration, decision curves).
+Censoring is why survival statistics are not classification statistics. A
+patient censored at 10 months is not a patient who survived 10 months and it is
+not a patient who died at 10 months — the observation says "no event *yet*",
+which is why every metric in this package either drops censored patients from a
+comparison they cannot inform (the concordance index) or weights them by the
+inverse of the censoring survival (Brier score, time-dependent AUC,
+calibration, decision curves). Ignoring censoring is the most common way a
+survival paper gets its numbers wrong.
 
 ```{r data}
 data <- sim_surv_data(n = 400, seed = 2026)
 head(data, 4)
+table(data$status)
 ```
 
-The simulator stores the true linear predictor, so we can also ask what the best
-possible answer looks like:
+The simulator stores the true linear predictor, so we can also ask what the
+best possible answer looks like:
 
 ```{r truth}
-time_points <- c(12, 36, 60)
+time_points <- c(3, 6, 12)
 truth <- sim_surv_truth(data, time_points)
 round(head(truth$survival, 3), 3)
 ```
+
+**The time points are yours to choose.** They should be the horizons a
+clinician would ask about, and they must be horizons the follow-up can
+support: a time point past which nobody was observed has no comparable pairs
+left, and the package reports `NA` there rather than inventing a number. With
+this cohort's median follow-up around 4 months, horizons of 3, 6 and 12 are
+supported; horizons of 36 or 60 would not be.
 
 ## The specification comes first
 
@@ -76,9 +88,10 @@ spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
 spec
 ```
 
-The time points are yours to choose and are never invented by the package. They
-should be the horizons a clinician would ask about, not round numbers chosen for
-convenience.
+`rpart` is here on purpose: it predicts only a risk score, not a full survival
+distribution, and the package's answer to that is a *documented* limitation
+rather than a made-up number. `surv_learner_registry()` lists every `surv.*`
+learner the installed mlr3 packages expose.
 
 ## Data and task
 
@@ -115,22 +128,40 @@ Read the table like this:
 
 * `cindex` is Harrell's concordance index: pick two patients where one had the
   event first; the C-index is the probability the model gave the sicker one the
-  higher risk. 0.5 is a coin flip.
-* `brier` at a time point is the inverse-probability-of-censoring weighted mean
-  squared difference between the predicted survival probability and what
-  happened.
-* `auc` at a time point is the cumulative/dynamic AUC: the probability that a
-  patient who had an event by that time was given a higher risk than a patient
-  who was still event-free after it.
-* `ibs` integrates the Brier score over the time points you asked for.
+  higher risk. 0.5 is a coin flip. Its weakness is that the set of comparable
+  pairs depends on *who got censored*, so two cohorts with the same model can
+  give different C-indices for censoring reasons alone.
+* `uno_c` is the censoring-adjusted answer to the same question (Uno et al.
+  2011). It reweights the pairs by the inverse **squared** censoring survival
+  estimated on the **training** data and truncates at `tau`. Report Harrell's C
+  and Uno's C side by side; when they disagree, the disagreement is about the
+  censoring, not about the model. Both need only a risk score, which is why the
+  risk-only model `rpart` gets them and nothing else.
+* `brier(t)` is the inverse-probability-of-censoring weighted mean squared
+  difference between the predicted survival probability and what happened.
+  Lower is better.
+* `ibs` integrates the Brier score over the time points you asked for with the
+  trapezoidal rule — it therefore depends on that grid, and the documentation
+  says so.
+* `auc(t)` is the cumulative/dynamic AUC: the probability that a patient who
+  had an event by `t` was given a higher risk than a patient who was still
+  event-free after it.
+* `auc_uno(t)` is Uno's IPCW estimator of the same quantity: same pairs, but
+  the case weights come from the **training** censoring curve. When the
+  evaluation set is small, `auc` and `auc_uno` can disagree for censoring
+  reasons; report both and say which one a table uses.
+* `iauc` and `iauc_uno` integrate the two AUC families over your grid.
+* The calibration columns (`citl`, `e50`, `e90`) are explained in the next
+  section.
 
 Every one of these is pinned by a test against an independent implementation:
-`survival::concordance()` for the C-index, `riskRegression::Score()` for the
-Brier score and the AUC. The AUC is additionally pinned against the area under
-the ROC curve the package itself draws, so the number and the figure cannot
-disagree.
+`survival::concordance()` for Harrell's C, `survAUC::UnoC()` and
+`survAUC::AUC.uno()` for the Uno statistics (agreement to machine precision),
+`riskRegression::Score()` for the Brier score and the AUC. The AUC is
+additionally pinned against the area under the ROC curve the package itself
+draws, so the number and the figure cannot disagree.
 
-## Calibration
+## Calibration: is the number right?
 
 Discrimination asks "who is sicker"; calibration asks "is the number right". A
 model can rank perfectly and still tell every patient they have a 90% chance of
@@ -141,42 +172,53 @@ calibration <- surv_calibration_curves(
   prepared$time, prepared$status, survival, time_points
 )
 calibration$summary
-head(calibration$table, 4)
 ```
 
-`ici` is the integrated calibration index: the patient-weighted mean absolute
-difference between the prediction and the Kaplan-Meier estimate inside each
-prediction group. Groups are formed from the predictions only, never from the
-outcome.
-
-The summary also carries `slope` and `intercept`, which answer a sharper
-question than the group table and do not depend on how the groups were cut:
+* `ici` is the integrated calibration index: the patient-weighted mean absolute
+  difference between the prediction and the Kaplan-Meier estimate inside each
+  prediction group.
+* `citl` is calibration-in-the-large: the group-size-weighted mean of
+  `observed - predicted`. Negative means the predictions run too high on
+  average. It is the closest thing to the binary intercept.
+* `e50` and `e90` are the median and the 90th percentile of the patient-level
+  absolute error, where each patient's observed value is the Kaplan-Meier
+  estimate of their prediction group. The trio is from Austin and colleagues
+  (2019, 2020): a large ICI with a small E50 means a few groups are badly off;
+  the reverse means small errors are spread everywhere.
+* The summary also carries `slope` and `intercept`, which answer a sharper
+  question than the group table and do not depend on how the groups were cut:
 
 ```{r calibration-slope}
-surv_calibration_slope(prepared$time, prepared$status, survival[, 1], time_points[1])
+surv_calibration_slope(prepared$time, prepared$status, survival[, 1],
+                       time_points[1])
 ```
 
 `surv_calibration_slope()` fits
-`cloglog(P(T <= t | x)) = intercept + slope * cloglog(1 - S(t | x))`. The
-complementary log-log link is the scale on which a proportional hazards model is
-additive, so a calibrated prediction gives a slope of 1 and an intercept of 0.
-Below 1 means the predictions are too extreme, above 1 means too timid, and a
-non-zero intercept means the whole curve sits too high or too low. Patients
-censored before the horizon carry no information about the binary outcome at that
-horizon and are dropped, and the rest are weighted by the inverse Kaplan-Meier
-censoring survival — the same weighting as the Brier score.
-
-Read the `n` and `events` it returns before reading the coefficients. This
-cohort has enough patients to estimate them, but a slope from a few dozen
-patients can sit far from 1 while the model is fine, because the spread of the
-predicted survival on the cloglog scale is small and the fit mostly amplifies
-noise. Roughly 100 patients with a few dozen events is the point at which the
-number starts to mean something; below that, report the reliability curve and
-skip the coefficient.
+`cloglog(P(T <= t | x)) = intercept + slope * cloglog(1 - S(t | x))`. A
+calibrated prediction gives a slope of 1 and an intercept of 0. Below 1 means
+the predictions are too extreme, above 1 means too timid. **Read `n` and
+`events` before the coefficients**: this cohort has enough patients, but a
+slope from a few dozen patients can sit far from 1 while the model is fine.
+Roughly 100 patients with a few dozen events is where the number starts to mean
+something.
 
 ```{r calibration-plot, fig.cap = "Time-point calibration against Kaplan-Meier survival, with the recalibration coefficients in the caption."}
 plot_surv_calibration(calibration)
 ```
+
+## Discrimination over time and risk strata
+
+```{r km, fig.cap = "Kaplan-Meier curves by simulated risk tercile, with the log-rank p-value."}
+frame <- prepared
+frame$risk_group <- surv_risk_groups(risk, k = 3)
+plot_surv_km(frame, spec, group = "risk_group", logrank = TRUE)
+```
+
+The stratified Kaplan-Meier figure is what prediction papers show: split the
+cohort by predicted risk into equal-sized groups and draw one curve per group,
+with a log-rank p-value. The groups are a *presentation* device — their
+boundaries depend on the sample and must never be reused as clinical
+thresholds. The underlying model comparison lives in the metrics tables.
 
 ## Decision curves
 
@@ -190,15 +232,6 @@ plot_surv_dca(dca)
 
 Net benefit is computed with the same inverse-probability-of-censoring weights,
 so a patient censored before the horizon is not counted as a certain non-event.
-
-## Discrimination over time
-
-```{r time-metrics, fig.cap = "Brier score and time-dependent AUC over time."}
-plot_surv_km(data, spec, group = "sex")
-```
-
-The Kaplan-Meier curves show the crude picture. What the model adds is the
-separation the covariates buy.
 
 ## The workflow
 
@@ -215,28 +248,30 @@ validation <- data[index[281:340], ]
 test <- data[index[341:400], ]
 
 result <- run_surv_workflow(spec, train = train, validation = validation,
-                            test = test)
+                            test = test, ci_R = 100)
 
-result$metrics[, c("model", "set", "cindex", "ibs", "brier_36")]
+result$metrics[, c("model", "set", "cindex", "uno_c", "ibs", "iauc",
+                   "iauc_uno")]
 result$ranking
 ```
 
-`rpart` reports a C-index and nothing else. That is not a bug: `surv.rpart` can
-only produce a risk score, so it cannot be asked for a Brier score. The package
-says so in `result$meta$notes` instead of quietly filling in a number.
+`rpart` reports a C-index and Uno's C and nothing else. That is not a bug:
+`surv.rpart` can only produce a risk score, so it cannot be asked for a Brier
+score. The package says so in `result$meta$notes` instead of quietly filling in
+a number.
 
 ```{r notes}
 result$meta$notes
 ```
 
-## Confidence intervals
-
-Every number in the table above is a point estimate. The workflow bootstraps the
-comparison set for you; `surv_ci()` does the same thing on any prediction you
-already have.
+Every per-time column — `brier_3`, `auc_3`, `auc_uno_3`, `citl_3`, `e50_3`,
+`e90_3`, and the recalibration coefficients — lives in `result$metrics` as
+well, and `result$meta$by_time` holds the long table. `surv_ci()` bootstraps
+every column automatically:
 
 ```{r ci}
-head(result$ci[, c("model", "metric", "mean", "lower", "upper", "n_effective")], 6)
+head(result$ci[, c("model", "metric", "mean", "lower", "upper",
+                   "n_effective")], 8)
 ```
 
 Patients are resampled, not rows of a metric table. A resample that loses the
@@ -246,53 +281,48 @@ resamples.
 
 ## Explaining the model
 
-A survival model does not predict one number, so a SHAP analysis has to say what
-it is explaining. `time_point = NULL` explains the risk score — the quantity the
-concordance index ranks, and the one the published survival SHAP examples
-explain. A time point explains the predicted survival probability at that horizon
-instead.
+A survival model does not predict one number, so a SHAP analysis has to say
+what it is explaining. `time_point = NULL` explains the risk score — the
+quantity the concordance index ranks. A time point explains the predicted
+survival probability at that horizon instead. Since version 0.3.0 the
+explanations are reported **per variable**, not per one-hot column: the
+`sex_female`/`sex_male` columns of the encoder are summed back to `sex`, the
+same convention published SHAP figures use.
 
 ```{r shap-risk}
 explained <- surv_shap(
-  result, validation, model = "coxph",
-  n_explain = 60, bg_n = 30, seed = 1
+  result, newdata = validation, model = "coxph",
+  n_explain = 40, bg_n = 20, seed = 1
 )
-explained
-plot_surv_shap_beeswarm(explained)
-```
-
-```{r shap-time, fig.cap = "SHAP dependence for the predicted 36-unit survival."}
-explained_36 <- surv_shap(
-  result, validation, model = "coxph", time_point = 36,
-  n_explain = 60, bg_n = 30, seed = 1
-)
-plot_surv_shap_dependence(explained_36, "x1")
-```
-
-The two explanations are not interchangeable: a feature can raise the risk score
-and lower S(36) by different relative amounts, and the ranking of features can
-differ between them. Report which quantity you explained.
-
-```{r shap-importance, fig.cap = "SHAP importance for the risk score."}
 plot_surv_shap_importance(explained)
 ```
 
-`plot_surv_shap_waterfall()` and `plot_surv_shap_force()` explain one patient at
-a time, which is what a case discussion needs.
+```{r shap-time, fig.cap = "SHAP dependence for the predicted 6-month survival."}
+explained_6 <- surv_shap(
+  result, newdata = validation, model = "coxph", time_point = 6,
+  n_explain = 40, bg_n = 20, seed = 1
+)
+plot_surv_shap_dependence(explained_6, "x1")
+```
+
+The two explanations are not interchangeable: a feature can raise the risk
+score and lower S(6) by different relative amounts, and the ranking of features
+can differ between them. Report which quantity you explained.
 
 ## Handing the model to someone else
 
-Subgroup analyses are not part of this package on purpose: which subgroups matter
-is a clinical decision, and a package that guesses is worse than one that does not.
-What the package does is hand over everything needed to do it properly.
+Subgroup analyses are not part of this package on purpose: which subgroups
+matter is a clinical decision, and a package that guesses is worse than one
+that does not. What the package does is hand over everything needed to do it
+properly.
 
 ```{r save, eval = FALSE}
 path <- uniml::save_result(result, "model.rds")
 ```
 
 The file holds the fitted learners, the fitted preprocessor, the selected
-features, and the specification. Whoever opens it can score any subset and use the
-same metric functions the workflow used:
+features, and the specification. Whoever opens it can score any subset and use
+the same metric functions the workflow used:
 
 ```{r subgroup, eval = FALSE}
 restored <- uniml::read_result("model.rds")
@@ -303,6 +333,28 @@ calc_surv_metrics(
   as.matrix(scored[, grep("^S_", names(scored))]),
   restored$meta$time_points
 )
+```
+
+Predicting new patients uses the fitted preprocessor and the fitted learner,
+and never refits anything on the new data:
+
+```{r predict}
+newdata <- data[index[341:350], ]
+predict_surv(result, newdata, model = "coxph")
+```
+
+`model = "best"` would pick whatever ranks first, and here that is `rpart`,
+which cannot produce survival probabilities. The error names the models that
+can, which is more useful than silently switching to a different model than
+you asked for.
+
+## Exporting a result
+
+The result is a `uniml_result`, so the export layout is the one you already
+know:
+
+```{r export, eval = FALSE}
+uniml::export_results(result, dir = "report")
 ```
 
 ## Which learners are available
@@ -316,51 +368,27 @@ available <- surv_learner_registry(available_only = TRUE)
 available[, c("key", "mlr3_key", "distr", "tunable")]
 ```
 
-```{r registry-count}
-nrow(surv_learner_registry())
-```
-
 A learner without a curated space is still usable, just fitted at its defaults;
 `surv_register_learner()` adds a search space when you want to tune it.
-
-Predicting new patients uses the fitted preprocessor and the fitted learner, and
-never refits anything on the new data:
-
-```{r predict}
-newdata <- data[index[341:350], ]
-predict_surv(result, newdata, model = "coxph")
-```
-
-`model = "best"` would pick whatever ranks first, and here that is `rpart`, which
-cannot produce survival probabilities. The error names the models that can, which
-is more useful than silently switching to a different model than you asked for:
-
-```{r predict-best, error = TRUE}
-predict_surv(result, newdata)
-```
-
-## Exporting a result
-
-The result is a `uniml_result`, so the export layout is the one you already know:
-
-```{r export, eval = FALSE}
-uniml::export_results(result, dir = tempfile("unimlsurv-"))
-```
 
 ## What is deliberately missing
 
 * **Competing risks.** A patient who dies of something else is not censored;
-  they had an event, of a different type. That changes the estimate, not just the
-  implementation, so it is out of scope here.
-* **Uno's IPCW C-index.** It is a different estimand from Harrell's C and the
-  two should not be confused; only Harrell's C is reported.
-* **Subgroup analyses.** Which subgroups matter is a clinical decision, not a
-  statistical default. The package gives you a saved model and a scorer instead of
-  inventing the groups.
+  they had an event, of a different type. That changes the estimate, not just
+  the implementation, so it is out of scope here.
+* **Net reclassification improvement.** NRI compares two models on the same
+  data; the Steyerberg framework reserves it for the "does a new marker add
+  value on top of an established model" question, not for reporting one model.
+* **D-calibration and IPCW log-loss.** Rarely reported in prediction papers;
+  both can be borrowed from `mlr3proba`'s measure set if a reviewer asks.
+* **Distribution composition.** `mlr3proba`'s `PipeOpDistrCompositor` can bolt
+  a full survival distribution onto a risk-only model by borrowing a baseline
+  from another learner. That changes what "the model's Brier score" means, so
+  it is a separate, opt-in design decision rather than a default here.
 * **Tuning on the Brier score.** The inverse-probability weights depend on the
-  censoring distribution of the data the model was fitted on, so tuning models on
-  it would compare numbers computed on different data. Tuning uses the
+  censoring distribution of the data the model was fitted on, so tuning models
+  on it would compare numbers computed on different data. Tuning uses the
   concordance index.
 
 See `system.file("REFERENCES.md", package = "unimlsurv")` for the full list of
-papers each statistic follows.
+papers each statistic follows, with verified DOIs.
