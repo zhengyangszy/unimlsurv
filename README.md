@@ -17,7 +17,7 @@ library(mlr3)
 
 data <- sim_surv_data(n = 400, seed = 2026)
 
-spec <- surv_spec(time = "time", status = "status", time_points = c(12, 36, 60))
+spec <- surv_spec(time = "time", status = "status", time_points = c(3, 6, 12))
 spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
 
 set.seed(1)
@@ -29,7 +29,7 @@ result <- run_surv_workflow(
   test = data[index[341:400], ]
 )
 
-result$metrics[, c("model", "set", "cindex", "ibs")]
+result$metrics[, c("model", "set", "cindex", "uno_c", "ibs", "iauc")]
 result$ranking
 ```
 
@@ -38,36 +38,42 @@ result$ranking
 | Statistic | Function | Definition | Checked against |
 | --- | --- | --- | --- |
 | Concordance index | `surv_cindex()` | Harrell's C over comparable pairs | `survival::concordance()` |
+| Uno's concordance index | `surv_cindex_uno()` | IPCW-weighted C at a horizon, weights from the training data | `survAUC::UnoC()` |
 | Brier score at `t` | `surv_brier()` | Graf's IPCW Brier score | `riskRegression::Score()` |
 | Integrated Brier score | `surv_ibs()` | Brier integrated over your time points | hand trapezoid |
 | Time-dependent AUC | `surv_auc()` | cumulative/dynamic AUC, IPCW | `riskRegression::Score()`; the area under `surv_roc_curve()` |
-| Calibration at `t` | `surv_calibration()` | predicted vs Kaplan-Meier, by prediction group | definition of ICI |
+| Uno's AUC at `t` | `surv_auc_uno()` | IPCW AUC with training-based case weights | `survAUC::AUC.uno()` |
+| Integrated AUCs | `surv_iauc_uno()` and the `iauc` column | trapezoid over your time points | hand trapezoid |
+| Calibration at `t` | `surv_calibration()` | predicted vs Kaplan-Meier, by prediction group; ICI, `citl`, `e50`, `e90` | Austin et al. 2019/2020 definitions |
 | Recalibration at `t` | `surv_calibration_slope()` | cloglog slope and intercept, IPCW | a true model gives slope 1, intercept 0 |
+| Stratified Kaplan-Meier | `surv_risk_groups()` + `plot_surv_km(logrank = TRUE)` | risk terciles with the log-rank test | `survival::survdiff()` |
 | Net benefit at `t` | `surv_dca()` | IPCW net benefit vs treat-all / treat-none | definition of net benefit |
 | Confidence intervals | `surv_ci()` | percentile bootstrap over patients | the point estimate it brackets |
 
 Every statistic is pinned by a test against an independent implementation, and
-every one is documented with the paper it follows. See
-`system.file("REFERENCES.md", package = "unimlsurv")`.
+every one is documented with the paper it follows (DOIs verified against
+Crossref). See `system.file("REFERENCES.md", package = "unimlsurv")`.
 
 ## Explaining a survival model
 
 A survival prediction is not one number, so `surv_shap()` makes you say which
 quantity you are explaining: the risk score the C-index ranks
 (`time_point = NULL`), or the predicted survival probability at a horizon
-(`time_point = 36`). The two are not interchangeable.
+(`time_point = 6`). The two are not interchangeable.
 
 ```r
 explained <- surv_shap(result, validation, model = "coxph")
 plot_surv_shap_beeswarm(explained)
 plot_surv_shap_dependence(explained, "x1")
 
-explained_36 <- surv_shap(result, validation, model = "coxph", time_point = 36)
-plot_surv_shap_importance(explained_36)
+explained_6 <- surv_shap(result, validation, model = "coxph", time_point = 6)
+plot_surv_shap_importance(explained_6)
 ```
 
 Kernel SHAP is used because survival learners are not all tree ensembles; a tree
-shortcut would silently change the estimator depending on the model.
+shortcut would silently change the estimator depending on the model. Since
+0.3.0, explanations are reported per **variable** — the one-hot columns of each
+factor are summed back, the same convention published SHAP figures use.
 
 ## Handing the model to someone else
 
@@ -94,8 +100,14 @@ curated alias and search space; the rest are usable at their defaults.
 
 * **Competing risks.** A death from another cause is an event of a different
   type, not a censoring. That changes the estimand, so it is out of scope.
-* **Uno's IPCW C-index.** A different estimand from Harrell's C; reporting both
-  under one name is how the literature gets confused. Only Harrell's C is here.
+* **Net reclassification improvement.** NRI is reserved by the Steyerberg
+  framework for the "does a new marker add value" question, not for reporting
+  one model.
+* **D-calibration and IPCW log-loss.** Rarely reported in prediction papers;
+  they can be borrowed from `mlr3proba`'s measure set if a reviewer asks.
+* **Distribution composition.** `mlr3proba`'s `PipeOpDistrCompositor` can bolt a
+  full survival distribution onto a risk-only model; that changes what "the
+  model's Brier score" means, so it stays an opt-in design decision.
 * **Subgroup analyses.** Which subgroups matter is a clinical decision, not a
   statistical default. You get a saved model and a scorer instead of invented
   groups.
@@ -103,8 +115,8 @@ curated alias and search space; the rest are usable at their defaults.
   censoring distribution of the training data, so tuning on it would compare
   numbers computed on different data. Tuning uses the concordance index.
 * **`surv.rpart` and other risk-only learners** are supported, but they report a
-  C-index and nothing else. The package says so in `result$meta$notes` instead of
-  filling in a number it cannot compute.
+  C-index and Uno's C and nothing else. The package says so in
+  `result$meta$notes` instead of filling in a number it cannot compute.
 
 ## Installation
 
@@ -119,6 +131,9 @@ remotes::install_github("zhengyangszy/unimlsurv")
 
 * `vignette("unimlsurv")` — a full walk-through on a simulated cohort.
 * `vignette("unimlsurv-zh")` — the same in Chinese.
+* `vignette("unimlsurv-metrics")` — every metric explained: what question it
+  answers, how to read it, when not to read it.
+* `vignette("unimlsurv-metrics-zh")` — the same in Chinese.
 * `?surv_spec`, `?run_surv_workflow`, and the help page of every metric.
 
 ## Relationship to uniml

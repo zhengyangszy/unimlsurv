@@ -8,7 +8,7 @@
 
 `unimlsurv` 是 `uniml` 的生存分析版本。分层（规格、数据、任务、学习器、调参、指标、
 绘图、工作流）和对象都一样，会用一个就会用另一个。变的是结局，以及因此变化的
-"数字代表什么"。
+数字含义。
 
 ```r
 library(unimlsurv)
@@ -16,7 +16,7 @@ library(mlr3)
 
 data <- sim_surv_data(n = 400, seed = 2026)
 
-spec <- surv_spec(time = "time", status = "status", time_points = c(12, 36, 60))
+spec <- surv_spec(time = "time", status = "status", time_points = c(3, 6, 12))
 spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
 
 set.seed(1)
@@ -28,48 +28,54 @@ result <- run_surv_workflow(
   test = data[index[341:400], ]
 )
 
-result$metrics[, c("model", "set", "cindex", "ibs")]
+result$metrics[, c("model", "set", "cindex", "uno_c", "ibs", "iauc")]
 result$ranking
 ```
 
-## 报告哪些指标
+## 它报告什么
 
-| 指标 | 函数 | 定义 | 对照验证 |
+| 统计量 | 函数 | 定义 | 验证对照 |
 | --- | --- | --- | --- |
-| C 指数 | `surv_cindex()` | Harrell C，只算可比对 | `survival::concordance()` |
-| 时点 Brier | `surv_brier()` | Graf 的 IPCW Brier | `riskRegression::Score()` |
-| 积分 Brier | `surv_ibs()` | 在你给的时间点上积分 | 手算梯形积分 |
-| 时依 AUC | `surv_auc()` | 累积/动态 AUC，IPCW | `riskRegression::Score()`；以及 `surv_roc_curve()` 曲线下面积 |
-| 时点校准 | `surv_calibration()` | 预测值 vs 分组内 Kaplan-Meier | ICI 定义 |
-| 时点重新校准 | `surv_calibration_slope()` | cloglog 斜率与截距，IPCW 加权 | 真模型给出斜率 1、截距 0 |
-| 时点净获益 | `surv_dca()` | IPCW 净获益，对照全干预/不干预 | 净获益定义 |
-| 置信区间 | `surv_ci()` | 按病人重抽样的百分位 bootstrap | 它所包围的点估计 |
+| 一致性指数 | `surv_cindex()` | 可比较配对上的 Harrell C | `survival::concordance()` |
+| Uno 一致性指数 | `surv_cindex_uno()` | 截断点处的 IPCW 加权 C，权重取自训练集 | `survAUC::UnoC()` |
+| `t` 时点 Brier | `surv_brier()` | Graf 反删失概率加权 Brier | `riskRegression::Score()` |
+| 积分 Brier | `surv_ibs()` | Brier 在你选时点上的积分 | 手工梯形 |
+| 时点 AUC | `surv_auc()` | cumulative/dynamic AUC，IPCW | `riskRegression::Score()`；`surv_roc_curve()` 曲线下面积 |
+| Uno 时点 AUC | `surv_auc_uno()` | case 权重取自训练集删失曲线 | `survAUC::AUC.uno()` |
+| 积分 AUC | `surv_iauc_uno()` 及 `iauc` 列 | 你选时点上的梯形积分 | 手工梯形 |
+| `t` 时点校准 | `surv_calibration()` | 预测 vs 组内 Kaplan-Meier；ICI、`citl`、`e50`、`e90` | Austin 等 2019/2020 的定义 |
+| `t` 时点再校准 | `surv_calibration_slope()` | cloglog 斜率与截距，IPCW | 真值模型给 slope 1、intercept 0 |
+| 分层 Kaplan-Meier | `surv_risk_groups()` + `plot_surv_km(logrank = TRUE)` | 风险三分位 + log-rank 检验 | `survival::survdiff()` |
+| `t` 时点净获益 | `surv_dca()` | IPCW 净获益 vs 全治 / 全不治 | 净获益定义 |
+| 置信区间 | `surv_ci()` | 按病人重抽样的百分位 bootstrap | 它所夹住的点估计 |
 
-每个指标都有测试钉在独立实现上，每个都写明所依据的文献，见
-`system.file("REFERENCES.md", package = "unimlsurv")`。
+每个统计量都被测试钉在独立实现上，每个都有其所依循的论文（DOI 逐条过
+Crossref 核实）。见 `system.file("REFERENCES.md", package = "unimlsurv")`。
 
 ## 解释生存模型
 
-生存预测不是一个数，所以 `surv_shap()` 要求你说清楚解释的是哪个量：C 指数排序的
-**风险评分**（`time_point = NULL`），还是某个时点的**预测生存概率**
-（`time_point = 36`）。两者不能互换。
+生存预测不止一个数，`surv_shap()` 强制你说清解释的是哪个量：C 指数排序的
+风险分（`time_point = NULL`），或某时点的预测生存概率（`time_point = 6`）。
+两者不可互换。
 
 ```r
 explained <- surv_shap(result, validation, model = "coxph")
 plot_surv_shap_beeswarm(explained)
 plot_surv_shap_dependence(explained, "x1")
 
-explained_36 <- surv_shap(result, validation, model = "coxph", time_point = 36)
-plot_surv_shap_importance(explained_36)
+explained_6 <- surv_shap(result, validation, model = "coxph", time_point = 6)
+plot_surv_shap_importance(explained_6)
 ```
 
-用 Kernel SHAP 而不是树模型捷径：生存学习器不都是树集成，捷径会让估计量随模型变化。
+用 Kernel SHAP 是因为生存学习器不全是树模型；树的捷径会随模型悄悄更换估计量。
+从 0.3.0 起，解释按**原变量**给出——每个因子的 one-hot 列加总回原变量，与论文
+里 SHAP 图的惯例一致。
 
-## 把模型交给别人
+## 把模型交出去
 
-亚组分析刻意不在范围内：哪些亚组有意义是临床决定。`uniml::save_result()` 把拟合好的
-学习器、预处理器、选中的特征和规格写进一个文件，拿到它的人可以对任何子集打分，并用
-同一套指标函数。
+亚组分析刻意不在范围内：哪些亚组重要是临床判断。`uniml::save_result()` 把拟合
+好的学习器、预处理器、入选特征与规格写进一个文件，拿到的人可以对任何子集打分，
+并使用同一批指标函数。
 
 ```r
 path <- uniml::save_result(result, "model.rds")
@@ -77,29 +83,34 @@ restored <- uniml::read_result(path)
 scored <- predict_surv(restored, older_patients)
 ```
 
-## mlr3 能支持的生存学习器都在
+## mlr3 有的生存学习器全都在
 
-`surv_learner_registry()` 列出当前安装的 `mlr3` 系列包暴露的**全部 29 个** `surv.*`
-学习器，连同短别名、能否给生存概率、有没有预置调参空间。其中 12 个有别名和调参空间，
-其余用默认参数即可使用。
+`surv_learner_registry()` 列出已安装 mlr3 包暴露的全部 29 个 `surv.*` 学习器：
+别名、能否输出生存概率、有没有内置调参空间。12 个有内置别名与搜索空间，其余
+按默认参数可用。
 
 
-## 刻意没做的部分
+## 刻意不做的
 
-* **竞争风险。** 死于其他原因属于另一类事件，不是删失。这改变估计量本身，不在
-  本包范围。
-* **Uno 的 IPCW C 指数。** 和 Harrell C 是两个不同的估计量，用同一个名字混着报，
-  正是文献里最容易出错的地方。本包只报 Harrell C。
-* **亚组分析。** 哪些亚组有意义是临床决定，不是统计默认值。包给你一个存好的模型和
-  一个打分函数，而不是替你编组。
-* **用 Brier 调参。** 逆概率权重依赖训练数据的删失分布，用它调参等于拿不同数据
-  上的数互相比。调参用 C 指数。
-* **`surv.rpart` 这类只给风险分数的学习器**可以跑，但只报 C 指数，其他指标留空，
-  并在 `result$meta$notes` 里说明原因，而不是填一个算不出来的数。
+* **竞争风险。**死于其他原因是另一类型的事件，不是删失。这改变的是估计量本身，
+  所以不在范围内。
+* **NRI（净重分类改善）**。Steyerberg 框架把它留给"新标志物是否增值"的问题，
+  不是单个模型的常规报告。
+* **D-calibration 与 IPCW log-loss**。预测模型论文里罕见；审稿人若要求，可以借
+  `mlr3proba` 的度量集。
+* **分布组合**。`mlr3proba` 的 `PipeOpDistrCompositor` 能把完整生存分布"装"到
+  纯风险分模型上；这会改变"该模型的 Brier"的含义，所以保持为可另行选择的设计
+  决定。
+* **亚组分析。**哪些亚组重要是临床判断，不是统计默认。给你的是存档模型和打分器，
+  不是替你发明的分组。
+* **用 Brier 调参。**其反删失权重取决于训练数据的删失分布，用它调参会拿不同口径
+  的数互相比。调参用 C 指数。
+* **`surv.rpart` 等纯风险分学习器**受支持，但只报 C 指数和 Uno C。包把这个写进
+  `result$meta$notes`，而不是填一个算不出来的数。
 
 ## 安装
 
-因为 `mlr3proba` 不在 CRAN 上，`unimlsurv` 只通过 GitHub 发布。
+`unimlsurv` 只在 GitHub，因为 `mlr3proba` 不在 CRAN。
 
 ```r
 # install.packages("remotes")
@@ -108,16 +119,19 @@ remotes::install_github("zhengyangszy/unimlsurv")
 
 ## 文档
 
-* `vignette("unimlsurv")` —— 英文完整示例。
-* `vignette("unimlsurv-zh")` —— 中文完整示例。
+* `vignette("unimlsurv")` —— 模拟队列上的完整教程。
+* `vignette("unimlsurv-zh")` —— 中文版。
+* `vignette("unimlsurv-metrics")` —— 每个指标逐个讲透：回答什么问题、怎么读、
+  什么时候别读。
+* `vignette("unimlsurv-metrics-zh")` —— 中文版。
 * `?surv_spec`、`?run_surv_workflow`，以及每个指标的帮助页。
 
-## 和 uniml 的关系
+## 与 uniml 的关系
 
-`unimlsurv` 依赖 `uniml`，并在它的任务类型注册表里注册 `"survival"`。预处理、
-插补、标准化、编码、调参、导出用的都是 `uniml` 的实现；工作流跑的是
-`uniml::workflow_engine()` 加一个生存适配器。`unimlsurv` 新增的是生存统计量、
-生存图，以及"预处理器必须放过两列结局"这条规则。
+`unimlsurv` 依赖 `uniml` 并在其任务类型注册表里注册 `"survival"`。预处理、插补、
+标准化、编码、调参与导出都是 `uniml` 的实现；工作流跑的是
+`uniml::workflow_engine()` 加一个生存适配器。`unimlsurv` 添加的是生存统计量与
+图形，以及"预处理器必须放过两个结局列"的规则。
 
 ## 引用
 
