@@ -6,6 +6,18 @@
 
 用 `mlr3` 做生存分析，结构和 [`uniml`](https://github.com/zhengyangszy/uniml) 完全一致。
 
+## 安装
+
+先从 CRAN 装 `uniml`，再从 GitHub 装 `unimlsurv`：
+
+```r
+install.packages("uniml")                             # CRAN
+# install.packages("remotes")
+remotes::install_github("zhengyangszy/unimlsurv")     # GitHub
+```
+
+`unimlsurv` 目前只发 GitHub，因为它的依赖 `mlr3proba` 不在 CRAN 上。
+
 `unimlsurv` 是 `uniml` 的生存分析版本。分层（规格、数据、任务、学习器、调参、指标、
 绘图、工作流）和对象都一样，会用一个就会用另一个。变的是结局，以及因此变化的
 数字含义。

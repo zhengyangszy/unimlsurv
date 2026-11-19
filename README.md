@@ -6,6 +6,19 @@
 
 Survival analysis with `mlr3`, in the same shape as [`uniml`](https://github.com/zhengyangszy/uniml).
 
+## Installation
+
+Install `uniml` from CRAN first, then `unimlsurv` from GitHub:
+
+```r
+install.packages("uniml")                             # CRAN
+# install.packages("remotes")
+remotes::install_github("zhengyangszy/unimlsurv")     # GitHub
+```
+
+`unimlsurv` is distributed on GitHub because its dependency `mlr3proba` is not
+currently available on CRAN.
+
 `unimlsurv` is the time-to-event sibling of `uniml`. It keeps the layering —
 specification, data, task, learners, tuning, metrics, plots, workflow — and the
 same objects, so a user who knows one knows the other. What changes is the
