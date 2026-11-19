@@ -26,6 +26,9 @@
 * Against an older `uniml` that predates the `orig_data` argument the
   explanation falls back to the preprocessor-based display, still correct,
   with no error.
+* The survival engine inherits uniml 0.6.0's `set_evaluation(stratify =
+  TRUE)`: the outcome (event indicator) balances the resampling folds when
+  the switch is on.
 
 # unimlsurv 0.3.0
 
