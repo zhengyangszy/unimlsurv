@@ -24,6 +24,12 @@
 #' outcome columns are used only to build the mlr3 task that scoring needs; they
 #' do not enter the explanation.
 #'
+#' @details
+#' Feature values shown in the plots are the patient's own values from
+#' `newdata`: the explanation is aggregated back to the original variables, and
+#' scaling, imputation, encoding, and log transforms are not reflected on the
+#' plot axes.
+#'
 #' @param result A `uniml_result` returned by [run_surv_workflow()].
 #' @param newdata Data frame of patients to explain.
 #' @param model Model key, or `"best"` for the top-ranked model.
@@ -189,10 +195,29 @@ surv_shap <- function(result, newdata, model = "best", time_point = NULL,
     requireNamespace("uniml", quietly = TRUE) &&
     exists("aggregate_shap_variables", envir = asNamespace("uniml"),
            inherits = FALSE)
-  if (can_aggregate) {
-    shap_object <- uniml::aggregate_shap_variables(
-      shap_object, entry$preprocessor
+  supports_orig <- can_aggregate &&
+    "orig_data" %in% names(formals(uniml::aggregate_shap_variables))
+  # Display feature values in the patient's own units: pass the original,
+  # unprocessed columns through, so imputation, scaling, encoding, and log
+  # transforms never leak into the plot axes.
+  orig_frame <- NULL
+  if (supports_orig) {
+    feature_cols <- setdiff(
+      names(newdata),
+      c(block$time, block$status, spec$id, spec$exclude)
     )
+    if (length(feature_cols) > 0L) {
+      orig_frame <- newdata[explain_index, feature_cols, drop = FALSE]
+    }
+  }
+  if (can_aggregate) {
+    shap_object <- if (!is.null(orig_frame)) {
+      uniml::aggregate_shap_variables(
+        shap_object, entry$preprocessor, orig_data = orig_frame
+      )
+    } else {
+      uniml::aggregate_shap_variables(shap_object, entry$preprocessor)
+    }
   } else {
     message(paste0(
       "uniml (>= 0.5.2) not detected: SHAP values stay per encoded column ",

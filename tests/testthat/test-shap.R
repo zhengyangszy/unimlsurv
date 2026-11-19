@@ -118,3 +118,39 @@ test_that("a risk-only model can only be explained on the risk score", {
                          n_explain = 10L, bg_n = 10L, seed = 4)
   expect_identical(explained$quantity, "risk score")
 })
+
+test_that("surv_shap() displays feature values in their original units", {
+  skip_if_not_installed("kernelshap")
+  skip_if_not_installed("shapviz")
+  set.seed(53)
+  data <- sim_surv_data(n = 200, seed = 53)
+  index <- sample.int(nrow(data))
+  validation <- data[index[151:200], ]
+  spec <- surv_spec(time = "time", status = "status", time_points = c(12, 36))
+  spec <- uniml::set_preprocess(spec, scale = "zscore")
+  spec <- surv_set_learners(spec, "coxph", tune = FALSE)
+  spec <- surv_set_tuning(spec, folds = 2L, evals = 1L)
+  result <- run_surv_workflow(
+    spec,
+    train = data[index[1:150], ],
+    validation = validation,
+    ci_R = 0L
+  )
+  explained <- surv_shap(
+    result, validation, model = "coxph",
+    n_explain = 20L, bg_n = 10L, seed = 1
+  )
+  values <- shapviz::get_feature_values(explained$shap)
+  set.seed(1)
+  rows <- sort(sample.int(nrow(validation), 20L))
+  # Scaling was on, so only the original-unit display can match the raw
+  # newdata columns.
+  expect_equal(values$x1, validation$x1[rows])
+  expect_identical(
+    as.numeric(values$sex),
+    as.numeric(match(
+      as.character(validation$sex[rows]),
+      levels(validation$sex)
+    ) - 1L)
+  )
+})

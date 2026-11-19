@@ -16,6 +16,17 @@
   cannot draw what the model did not estimate. Non-Cox models are refused
   with a message.
 
+## SHAP axes show the patient's own values
+
+* `surv_shap()` now passes the original, unprocessed columns of `newdata`
+  into the variable-level aggregation, so the beeswarm, dependence, and
+  waterfall figures show feature values exactly as observed — scaling,
+  imputation, encoding, and the skewness transform do not appear on the plot
+  axes. Log-transformed columns are displayed on their original scale.
+* Against an older `uniml` that predates the `orig_data` argument the
+  explanation falls back to the preprocessor-based display, still correct,
+  with no error.
+
 # unimlsurv 0.3.0
 
 The metrics a survival prediction paper is expected to report, with every new

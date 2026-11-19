@@ -9,7 +9,7 @@ plot_surv_nomogram(
   model = "best",
   time_point = NULL,
   palette = "bmj",
-  theme = theme_uniml(),
+  theme = uniml::theme_uniml(),
   title = NULL
 )
 }

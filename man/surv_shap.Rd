@@ -45,6 +45,11 @@ score or on the predicted survival probability at one time point.
 \code{newdata} must contain the feature columns the model was trained on. The two
 outcome columns are used only to build the mlr3 task that scoring needs; they
 do not enter the explanation.
+
+Feature values shown in the plots are the patient's own values from
+\code{newdata}: the explanation is aggregated back to the original variables, and
+scaling, imputation, encoding, and log transforms are not reflected on the
+plot axes.
 }
 \examples{
 \dontrun{
