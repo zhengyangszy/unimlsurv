@@ -1,3 +1,21 @@
+# unimlsurv 0.4.0
+
+## Nomogram for Cox models
+
+* New `surv_nomogram_table()` and `plot_surv_nomogram()` turn a fitted `coxph`
+  model into the classical clinical figure: one scale per variable in its
+  original units (unscaled through the fitted scaling step), categorical
+  variables shown relative to their reference level, and the total
+  linear-predictor scale. When `time_point` is given and the fitted object
+  carries the baseline cumulative hazard, the figure adds a survival
+  probability row through `S(t | x) = exp(-H0(t) * exp(lp))` — read it as a
+  ranking tool, with the workflow's recalibration coefficients saying how
+  much to trust the absolute numbers.
+* Columns aliased away by the Cox fit are skipped: with full-level encoding
+  the reference dummy is exactly that, its coefficient is NA, and a nomogram
+  cannot draw what the model did not estimate. Non-Cox models are refused
+  with a message.
+
 # unimlsurv 0.3.0
 
 The metrics a survival prediction paper is expected to report, with every new
