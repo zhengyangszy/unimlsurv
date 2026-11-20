@@ -7,7 +7,7 @@
 tune_surv(task, learner_spec, spec)
 }
 \arguments{
-\item{task}{An \code{mlr3proba::TaskSurv}.}
+\item{task}{A native task from \code{\link[=make_surv_task]{make_surv_task()}}.}
 
 \item{learner_spec}{An entry from \code{\link[=resolve_surv_learners]{resolve_surv_learners()}}.}
 
@@ -15,27 +15,30 @@ tune_surv(task, learner_spec, spec)
 }
 \value{
 A list with \code{learner}, \code{best_params}, \code{best_metric}, \code{status}, and
-\code{measure}.
+\code{measure}. The learner is returned unfitted; the workflow's train hook
+fits it with \code{best_params}.
 }
 \description{
-Random search (or any \code{mlr3tuning} tuner) over the learner's search space,
-scored by the concordance index. Learners without a search space are returned
-untuned rather than being given one that would not mean anything.
+A repeated cross-validated search over the learner's parameter space, scored
+by the package's own concordance index on pooled out-of-fold risk
+predictions. Learners without a space are returned untuned rather than being
+given one that would not mean anything. Foreign mlr3 learners tune through
+\code{mlr3tuning}, which requires \code{mlr3proba}.
 }
 \examples{
 \dontrun{
 data <- sim_surv_data(n = 150, seed = 1)
 spec <- surv_spec(time = "time", status = "status")
 task <- make_surv_task(data, spec)
-learners <- resolve_surv_learners("rpart", tune = TRUE)
-tuned <- tune_surv(task, learners$rpart, spec)
-tuned$status
+learners <- resolve_surv_learners("coxph", tune = TRUE)
+tuned <- tune_surv(task, learners$coxph, spec)
+tuned$best_params
 }
 }
 \references{
 Probst P, Boulesteix AL, Bischl B (2019). Tunability: importance of
 hyperparameters. \emph{Journal of Machine Learning Research}, 20(53), 1-32.
 
-Bischl B, Binder M, Lang M, et al. (2021). Hyperparameter optimization: a
-brief introduction. arXiv:2107.05847.
+Varma S, Simon R (2006). Bias in error estimation when using cross-validation
+for model selection. \emph{BMC Bioinformatics}, 7, 91. doi:10.1186/1471-2105-7-91
 }

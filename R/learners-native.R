@@ -47,13 +47,6 @@
 
     .abort(sprintf("Unknown native engine \"%s\".", learner$engine))
   )
-  # rpart reads its per-leaf Kaplan-Meier curves after fitting (it needs
-  # fit$where); the other engines need nothing at this stage.
-  leaf_fits <- if (identical(learner$engine, "rpart")) {
-    .surv_leaf_fits(fit, frame, task$time_col, task$status_col)
-  } else {
-    NULL
-  }
   structure(
     list(
       key = learner$key,
@@ -63,8 +56,7 @@
       fit = fit,
       features = task$features,
       time_col = task$time_col,
-      status_col = task$status_col,
-      leaf_fits = leaf_fits
+      status_col = task$status_col
     ),
     class = "unimlsurv_fitted"
   )
@@ -149,7 +141,7 @@ print.unimlsurv_fitted <- function(x, ...) {
 #' data <- sim_surv_data(n = 60, seed = 1)
 #' spec <- surv_spec(time = "time", status = "status", time_points = c(12, 36))
 #' task <- make_surv_task(data, spec)
-#' fitted <- train_surv(task, surv_learner_registry()$coxph)
+#' fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
 #' head(predict_surv_learner(fitted, data, c(12, 36))$survival)
 predict_surv_learner <- function(fitted, newdata, time_points) {
   if (!inherits(fitted, "unimlsurv_fitted")) {
@@ -163,11 +155,14 @@ predict_surv_learner <- function(fitted, newdata, time_points) {
     coxph = {
       lp <- as.numeric(stats::predict(fitted$fit, newdata = frame, type = "lp"))
       sf <- survival::survfit(fitted$fit, newdata = frame)
-      values <- summary(sf, times = time_points)$surv
+      # `extend = TRUE` carries the curve flat past the last observed follow-up,
+      # the standard convention when a user asks for a time point beyond the
+      # data; without it summary() silently drops that time point.
+      values <- summary(sf, times = time_points, extend = TRUE)$surv
       list(survival = values, risk = lp)
     },
     kaplan = {
-      values <- summary(fitted$fit, times = time_points)$surv
+      values <- summary(fitted$fit, times = time_points, extend = TRUE)$surv
       values <- matrix(
         rep(as.numeric(values), times = n),
         nrow = n,

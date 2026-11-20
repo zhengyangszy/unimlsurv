@@ -33,6 +33,13 @@
 make_surv_task <- function(data, spec) {
   validate_surv_spec(spec)
   block <- spec$survival
+  if (inherits(data, "unimlsurv_task")) {
+    if (!identical(data$time_col, block$time) ||
+        !identical(data$status_col, block$status)) {
+      .abort("`spec` does not match the time and status columns of `task`.")
+    }
+    return(data)
+  }
   if (inherits(data, "TaskSurv")) {
     # An mlr3 task is still accepted: convert it to the native frame.
     frame <- as.data.frame(data)
@@ -120,7 +127,7 @@ print.unimlsurv_task <- function(x, ...) {
 #' data <- sim_surv_data(n = 80, seed = 3)
 #' spec <- surv_spec(time = "time", status = "status")
 #' task <- make_surv_task(data, spec)
-#' trained <- train_surv(task, surv_learner_registry()$coxph)
+#' trained <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
 #' trained$engine
 train_surv <- function(task, learner, params = NULL) {
   if (inherits(learner, "unimlsurv_native_learner")) {
@@ -170,7 +177,7 @@ train_surv <- function(task, learner, params = NULL) {
 #' data <- sim_surv_data(n = 60, seed = 1)
 #' spec <- surv_spec(time = "time", status = "status", time_points = c(12, 36))
 #' task <- make_surv_task(data, spec)
-#' fitted <- train_surv(task, surv_learner_registry()$coxph)
+#' fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
 #' head(survival_matrix(predict_surv_learner(fitted, data, c(12, 36)), c(12, 36)))
 survival_matrix <- function(prediction, time_points) {
   .assert_numeric_vector(time_points, "time_points", min = 0)
@@ -213,8 +220,8 @@ survival_matrix <- function(prediction, time_points) {
 #' data <- sim_surv_data(n = 60, seed = 1)
 #' spec <- surv_spec(time = "time", status = "status")
 #' task <- make_surv_task(data, spec)
-#' fitted <- train_surv(task, surv_learner_registry()$coxph)
-#' head(survival_risk(predict_surv_learner(fitted, data)))
+#' fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
+#' head(survival_risk(predict_surv_learner(fitted, data, c(12, 36, 60))))
 survival_risk <- function(prediction) {
   if (inherits(prediction, "unimlsurv_prediction")) {
     return(as.numeric(prediction$risk))

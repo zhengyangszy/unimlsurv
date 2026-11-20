@@ -28,8 +28,8 @@ BugReports: https://github.com/zhengyangszy/unimlsurv/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Depends: R (>= 4.1)
-Imports: uniml (>= 0.6.0), survival, rpart, ggplot2, rlang, stats, utils
-Suggests: kernelshap, shapviz, ranger, glmnet, xgboost, mlr3, mlr3proba,
+Imports: uniml (>= 0.6.0), survival, ggplot2, rlang, stats, utils
+Suggests: kernelshap, shapviz, ranger, glmnet, xgboost, rpart, mlr3, mlr3proba,
         mlr3extralearners, riskRegression, pec, prodlim, survAUC,
         testthat (>= 3.0.0), knitr, rmarkdown
 Config/testthat/edition: 3

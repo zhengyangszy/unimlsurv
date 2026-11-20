@@ -44,7 +44,7 @@ test_that("run_surv_workflow() scores every model on every set", {
 
   expect_true(is.list(result$models))
   expect_true("coxph" %in% names(result$models))
-  expect_s3_class(result$models$coxph$learner, "Learner")
+  expect_s3_class(result$models$coxph$learner, "unimlsurv_fitted")
   expect_true(all(is.na(result$meta$failures$stage)) == FALSE || nrow(result$meta$failures) == 0L)
 })
 
@@ -101,9 +101,10 @@ test_that("predict_surv() reproduces the stored validation predictions", {
 
 test_that("a discrimination-only learner is reported, not silently dropped", {
   skip_if_not_installed("rpart")
+  skip_if_not_installed("mlr3proba")
   split <- workflow_data()
   spec <- workflow_spec()
-  spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
+  spec <- surv_register_learner(spec, "rpart", mlr3::lrn("surv.rpart"))
   result <- run_surv_workflow(spec, split$train, split$validation)
 
   expect_setequal(unique(result$metrics$model), c("coxph", "rpart"))
@@ -139,16 +140,16 @@ test_that("the learner registry is honest about capabilities", {
   expect_true("coxph" %in% registry$key)
   expect_true(all(surv_learner_registry(available_only = TRUE)$available))
 
-  learners <- resolve_surv_learners(c("coxph", "rpart"), tune = FALSE)
-  expect_identical(names(learners), c("coxph", "rpart"))
+  learners <- resolve_surv_learners(c("coxph", "kaplan"), tune = FALSE)
+  expect_identical(names(learners), c("coxph", "kaplan"))
   expect_true(learners$coxph$distr)
-  expect_false(learners$rpart$distr)
+  expect_true(learners$kaplan$distr)
   expect_error(resolve_surv_learners("nope"), "Unknown survival learner")
-  expect_error(resolve_surv_learners(list(a = 1)), "must be an mlr3 learner")
+  expect_error(resolve_surv_learners(list(a = 1)), "native learner")
 
   # A tuning search space exists only where it means something.
-  tuned <- resolve_surv_learners("rpart", tune = TRUE)
-  expect_true(tuned$rpart$tune)
+  tuned <- resolve_surv_learners("coxph", tune = TRUE)
+  expect_true(tuned$coxph$tune)
   expect_false(resolve_surv_learners("kaplan", tune = TRUE)$kaplan$tune)
 })
 

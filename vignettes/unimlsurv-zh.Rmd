@@ -73,13 +73,13 @@ spec <- surv_spec(
   time_points = time_points
 )
 spec <- uniml::set_preprocess(spec, impute = "median_mode", scale = "zscore")
-spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
+spec <- surv_set_learners(spec, c("coxph", "kaplan"), tune = FALSE)
 spec
 ```
 
-故意放进 `rpart`：它只给风险分、给不出完整生存分布，而包的回答是**写明的局限**，
-不是编出来的数。`surv_learner_registry()` 列出已安装 mlr3 包暴露的全部
-`surv.*` 学习器。
+故意放进 `kaplan`：它是无协变量基线，C 指数**必须恰好 0.5**——每个生存比较
+都该带的内置 sanity check。`surv_learner_registry()` 列出全部原生引擎；
+高级用户可用 `surv_register_learner()` 注册 mlr3 学习器。
 
 ## 数据与任务
 
@@ -97,9 +97,8 @@ task
 ## 指标逐个看
 
 ```{r metrics}
-learner <- mlr3::lrn("surv.coxph")
-fitted <- train_surv(task, learner)
-prediction <- fitted$predict(task)
+fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
+prediction <- predict_surv_learner(fitted, prepared$data, time_points)
 
 survival <- survival_matrix(prediction, time_points)
 risk <- survival_risk(prediction)
@@ -119,8 +118,8 @@ metrics$by_time
   仅因删失而不同。
 * `uno_c` 是同一个问题的删失校正版（Uno 等 2011）：配对按**训练集**估计的删失
   生存反**平方**加权，并在 `tau` 处截断。论文里 Harrell C 与 Uno C 应并报；
-  两者不一致时，分歧在删失而不在模型。两者都只需要风险分，所以纯风险分模型
-  `rpart` 也能拿到它们——别的拿不到。
+两者不一致时，分歧在删失而不在模型。两者都只需要风险分；纯风险分模型
+（注册的外邦学习器）也能拿到它们——别的拿不到。
 * `brier(t)` 是 Graf 的反删失概率加权均方差：预测的 S(t) 与实际发生了什么的
   平方差。越小越好。
 * `ibs` 是 Brier 在你选的时点上的梯形积分——因此依赖你选的网格，文档写明。
@@ -218,9 +217,9 @@ result$metrics[, c("model", "set", "cindex", "uno_c", "ibs", "iauc",
 result$ranking
 ```
 
-`rpart` 只报 C 指数和 Uno C，其余一概没有。这不是 bug：`surv.rpart` 只能产出
-风险分，问它要 Brier 就是难为它。包把这个写进 `result$meta$notes`，而不是悄悄
-填一个数。
+只输出风险分的学习器（注册的外邦 mlr3 学习器）只报 C 指数和 Uno C，其余一概
+没有。这不是 bug：问纯风险分模型要 Brier 就是难为它。包把这个写进
+`result$meta$notes`，而不是悄悄填一个数。
 
 ```{r notes}
 result$meta$notes
@@ -294,8 +293,8 @@ newdata <- data[index[341:350], ]
 predict_surv(result, newdata, model = "coxph")
 ```
 
-`model = "best"` 会挑排名第一的模型——这里是 `rpart`，给不出生存概率。报错会
-列出能给的模型，这比悄悄换一个你没点名的模型有用得多。
+注册的纯风险分学习器会在这里被拒：报错会列出能给的模型，这比悄悄换一个你没
+点名的模型有用得多。
 
 ## 导出结果
 
@@ -307,16 +306,16 @@ uniml::export_results(result, dir = "report")
 
 ## 可用的学习器
 
-`surv_learner_registry()` 列出已装 mlr3 包暴露的所有 `surv.*` 学习器：别名、
-能否输出生存概率、有没有内置调参空间。
+`surv_learner_registry()` 列出全部原生引擎：别名、能否输出生存概率、有没有
+内置调参空间。
 
 ```{r registry}
 available <- surv_learner_registry(available_only = TRUE)
-available[, c("key", "mlr3_key", "distr", "tunable")]
+available[, c("key", "engine", "distr", "tunable")]
 ```
 
-没有内置空间的学习器也能用（按默认参数拟合）；要调参用
-`surv_register_learner()` 补一个搜索空间。
+高级路径：`surv_register_learner()` 也能注册 mlr3 学习器（训练需要 GitHub 上
+的 `mlr3proba`）。
 
 ## 刻意不做的
 
@@ -325,10 +324,10 @@ available[, c("key", "mlr3_key", "distr", "tunable")]
 * **NRI（净重分类改善）**。NRI 比较同一数据上的两个模型；Steyerberg 框架把它
   留给"新标志物在既有模型上是否增值"的问题，不是单个模型的常规报告。
 * **D-calibration 与 IPCW log-loss**。预测模型论文里罕见；审稿人若要求，可以
-  借 `mlr3proba` 的度量集。
-* **分布组合**。`mlr3proba` 的 `PipeOpDistrCompositor` 可以借另一个学习器的
-  基线，把完整生存分布"装"到纯风险分模型上。这会改变"该模型的 Brier"的含义，
-  所以是独立的设计决定，不是这里的默认。
+  直接算。
+* **分布组合**。给纯风险分模型借另一个学习器的基线"装"上完整生存分布——
+  mlr3proba 的 PipeOpDistrCompositor 自动化这个把戏。这会改变"该模型的 Brier"
+  的含义，所以是独立的设计决定，不是这里的默认。
 * **用 Brier 调参**。反删失权重取决于拟合模型所用数据的删失分布，用它调参会
   拿不同口径的数互相比。调参用 C 指数。
 

@@ -4,13 +4,13 @@
 \name{unimlsurv-package}
 \alias{unimlsurv}
 \alias{unimlsurv-package}
-\title{unimlsurv: survival analysis with mlr3}
+\title{unimlsurv: survival analysis in the shape of uniml}
 \description{
 A time-to-event counterpart to \code{uniml}, built on the same layering, the same
-specification object, and the same \code{mlr3} machinery. See
-\code{vignette("unimlsurv")} for a worked example and
-\code{system.file("REFERENCES.md", package = "unimlsurv")} for the literature the
-statistics follow.
+specification object, and the same workflow engine. Native engines
+(\code{survival}, \code{rpart}) do the fitting; see \code{vignette("unimlsurv")} for a
+worked example and \code{system.file("REFERENCES.md", package = "unimlsurv")}
+for the literature the statistics follow.
 }
 \seealso{
 Useful links:

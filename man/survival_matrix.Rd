@@ -7,7 +7,8 @@
 survival_matrix(prediction, time_points)
 }
 \arguments{
-\item{prediction}{An \code{mlr3proba::PredictionSurv}.}
+\item{prediction}{A native prediction from \code{\link[=predict_surv_learner]{predict_surv_learner()}}, or an
+mlr3 \code{PredictionSurv} (foreign learners).}
 
 \item{time_points}{Numeric vector of time points.}
 }
@@ -16,16 +17,14 @@ A matrix with \code{length(time_points)} columns, named after the time
 points.
 }
 \description{
-\code{mlr3proba} returns a distribution object. Everything downstream of this
-function works on a plain numeric matrix with one row per patient and one
-column per time point, which is also what gets exported to disk.
+Extract survival probabilities from a prediction
 }
 \examples{
 data <- sim_surv_data(n = 60, seed = 1)
 spec <- surv_spec(time = "time", status = "status", time_points = c(12, 36))
 task <- make_surv_task(data, spec)
-prediction <- mlr3::lrn("surv.coxph")$train(task)$predict(task)
-head(survival_matrix(prediction, c(12, 36)))
+fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
+head(survival_matrix(predict_surv_learner(fitted, data, c(12, 36)), c(12, 36)))
 }
 \references{
 Graf E, Schmoor C, Sauerbrei W, Schumacher M (1999). Assessment and comparison

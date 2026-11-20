@@ -18,28 +18,38 @@
     make_task = function(data, spec, features) {
       block <- spec$survival
       frame <- data[, c(features, block$time, block$status), drop = FALSE]
-      mlr3proba::as_task_surv(
-        frame,
-        time = block$time,
-        event = block$status,
-        id = "unimlsurv_task"
-      )
+      make_surv_task(frame, spec)
     },
     predict = function(learner, task, spec) {
       time_points <- spec$survival$time_points
-      prediction <- learner$predict(task)
-      survival <- if (is.null(prediction$distr)) {
-        NULL
-      } else {
-        survival_matrix(prediction, time_points)
-      }
-      list(
-        prediction = prediction,
-        value = list(
-          survival = survival,
-          risk = survival_risk(prediction)
+      if (inherits(learner, "unimlsurv_fitted")) {
+        prediction <- predict_surv_learner(learner, task$data, time_points)
+        list(
+          prediction = prediction,
+          value = list(
+            survival = prediction$survival,
+            risk = prediction$risk
+          )
         )
-      )
+      } else {
+        # Foreign mlr3 learners keep the mlr3 prediction path (mlr3proba).
+        if (!inherits(task, "TaskSurv")) {
+          task <- .task_surv_to_mlr3(task)
+        }
+        prediction <- learner$predict(task)
+        survival <- if (is.null(prediction$distr)) {
+          NULL
+        } else {
+          survival_matrix(prediction, time_points)
+        }
+        list(
+          prediction = prediction,
+          value = list(
+            survival = survival,
+            risk = survival_risk(prediction)
+          )
+        )
+      }
     },
     pool = function(values) {
       if (length(values) == 1L) {
@@ -138,7 +148,7 @@ run_surv_workflow <- function(spec, train, validation, test = NULL,
   block <- spec$survival
   learners <- block$learners
   if (is.null(learners)) {
-    learners <- resolve_surv_learners(c("coxph", "rpart"), tune = FALSE)
+    learners <- resolve_surv_learners(c("coxph", "kaplan"), tune = FALSE)
   }
   time_points <- block$time_points
 
@@ -545,11 +555,20 @@ predict_surv <- function(result, newdata, model = "best",
   if (!is.data.frame(newdata)) {
     .abort("`newdata` must be a data frame.")
   }
-  if (!"distr" %in% entry$learner$predict_types) {
-    eligible <- names(Filter(
-      function(candidate) "distr" %in% candidate$learner$predict_types,
-      models
-    ))
+  native_fitted <- inherits(entry$learner, "unimlsurv_fitted")
+  has_distr <- if (native_fitted) {
+    TRUE
+  } else {
+    "distr" %in% entry$learner$predict_types
+  }
+  if (!has_distr) {
+    eligible <- names(Filter(function(candidate) {
+      if (inherits(candidate$learner, "unimlsurv_fitted")) {
+        TRUE
+      } else {
+        "distr" %in% candidate$learner$predict_types
+      }
+    }, models))
     .abort(sprintf(
       paste(
         "Model \"%s\" predicts a risk score only, so it cannot produce survival",
@@ -581,7 +600,7 @@ predict_surv <- function(result, newdata, model = "best",
   )
   # The learner was trained on exactly these columns; anything else is either a
   # new feature it has never seen or a feature it expects and cannot find.
-  required <- entry$task$feature_names
+  required <- if (native_fitted) entry$task$features else entry$task$feature_names
   missing_training <- setdiff(required, names(frame))
   if (length(missing_training) > 0L) {
     .abort(sprintf(
@@ -594,15 +613,23 @@ predict_surv <- function(result, newdata, model = "best",
     ))
   }
   frame <- frame[, c(required, block$time, block$status), drop = FALSE]
-  task <- mlr3proba::as_task_surv(
-    frame,
-    time = block$time,
-    event = block$status,
-    id = "unimlsurv_newdata"
-  )
-  prediction <- entry$learner$predict(task)
-  survival <- survival_matrix(prediction, time_points)
-  out <- data.frame(risk = survival_risk(prediction), stringsAsFactors = FALSE)
+  if (native_fitted) {
+    prediction <- predict_surv_learner(entry$learner, frame, time_points)
+    survival <- prediction$survival
+    risk <- prediction$risk
+  } else {
+    # Foreign mlr3 learners keep the mlr3 prediction path (mlr3proba).
+    task <- mlr3proba::as_task_surv(
+      frame,
+      time = block$time,
+      event = block$status,
+      id = "unimlsurv_newdata"
+    )
+    prediction <- entry$learner$predict(task)
+    survival <- survival_matrix(prediction, time_points)
+    risk <- survival_risk(prediction)
+  }
+  out <- data.frame(risk = risk, stringsAsFactors = FALSE)
   for (index in seq_along(time_points)) {
     out[[paste0("S_", format(time_points[[index]], trim = TRUE))]] <-
       survival[, index]

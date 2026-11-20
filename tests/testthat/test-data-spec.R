@@ -90,29 +90,31 @@ test_that("as_surv_data() checks the outcome and keeps the features", {
   expect_error(as_surv_data(recoded, spec), "logical or numeric")
 })
 
-test_that("make_surv_task() builds an mlr3 survival task", {
+test_that("make_surv_task() builds a native survival task", {
   data <- sim_surv_data(n = 100, seed = 4)
   spec <- surv_spec(time = "time", status = "status")
   task <- make_surv_task(data, spec)
 
-  expect_s3_class(task, "TaskSurv")
-  expect_identical(task$nrow, 100L)
-  expect_identical(task$target_names, c("time", "status"))
-  expect_setequal(task$feature_names, c("x1", "x2", "sex"))
+  expect_s3_class(task, "unimlsurv_task")
+  expect_identical(task$n, 100L)
+  expect_identical(task$time_col, "time")
+  expect_identical(task$status_col, "status")
+  expect_setequal(task$features, c("x1", "x2", "sex"))
   expect_error(
     make_surv_task(data, surv_spec(time = "nope", status = "status")),
     "does not contain"
   )
 
   # A task round-trips.
-  expect_s3_class(make_surv_task(task, spec), "TaskSurv")
+  expect_s3_class(make_surv_task(task, spec), "unimlsurv_task")
 })
 
 test_that("survival_matrix() and survival_risk() expose the prediction", {
   data <- sim_surv_data(n = 100, seed = 5)
   spec <- surv_spec(time = "time", status = "status", time_points = c(12, 36))
   task <- make_surv_task(data, spec)
-  prediction <- mlr3::lrn("surv.coxph")$train(task)$predict(task)
+  fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
+  prediction <- predict_surv_learner(fitted, data, c(12, 36))
 
   survival <- survival_matrix(prediction, c(12, 36))
   expect_identical(dim(survival), c(100L, 2L))

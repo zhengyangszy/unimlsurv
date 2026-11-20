@@ -19,7 +19,11 @@
   if (is.null(entry)) {
     .abort(sprintf("Unknown model \"%s\".", key))
   }
-  fitted <- entry$learner$model
+  fitted <- if (inherits(entry$learner, "unimlsurv_fitted")) {
+    entry$learner$fit
+  } else {
+    entry$learner$model
+  }
   if (is.null(fitted) || !inherits(fitted, "coxph")) {
     .abort(paste0(
       "A nomogram reads coefficients, so it is implemented for `coxph` ",
@@ -237,6 +241,8 @@ plot_surv_nomogram <- function(result, model = "best", time_point = NULL,
     zero_span, 0,
     100 * (variables$points_high - variables$points_low) / max(span)
   )
+  # Every scale starts at 0 on the shared points axis; its extent is axis_high.
+  variables$axis_low <- 0
   variable_rows <- seq_len(nrow(variables))
   variables$y <- max(variable_rows) + 1L - variable_rows
   total_y <- 0.25

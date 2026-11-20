@@ -4,7 +4,7 @@
 
 [![R-CMD-check](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml)
 
-Survival analysis with `mlr3`, in the same shape as [`uniml`](https://github.com/zhengyangszy/uniml).
+Survival analysis in the same shape as [`uniml`](https://github.com/zhengyangszy/uniml), with native engines (`survival`, `rpart`) and CRAN-only dependencies.
 
 ## Installation
 
@@ -16,7 +16,7 @@ install.packages("uniml")                             # CRAN
 remotes::install_github("zhengyangszy/unimlsurv")     # GitHub
 ```
 
-`unimlsurv` is distributed on GitHub because its dependency `mlr3proba` is not
+unimlsurv is distributed on GitHub while its CRAN submission is under review; every dependency in `Imports` installs from CRAN.
 currently available on CRAN.
 
 `unimlsurv` is the time-to-event sibling of `uniml`. It keeps the layering —
@@ -26,12 +26,12 @@ outcome, and therefore what the numbers mean.
 
 ```r
 library(unimlsurv)
-library(mlr3)
+library(unimlsurv)
 
 data <- sim_surv_data(n = 400, seed = 2026)
 
 spec <- surv_spec(time = "time", status = "status", time_points = c(3, 6, 12))
-spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
+spec <- surv_set_learners(spec, c("coxph", "kaplan"), tune = FALSE)
 
 set.seed(1)
 index <- sample.int(nrow(data))
@@ -101,13 +101,13 @@ restored <- uniml::read_result(path)
 scored <- predict_surv(restored, older_patients)
 ```
 
-## Every survival learner mlr3 has
+## The native survival engines
 
-`surv_learner_registry()` lists all 29 `surv.*` learners the installed `mlr3`
-packages expose, with a short alias, whether it can produce survival
-probabilities, and whether it carries a curated tuning space. Twelve have a
-curated alias and search space; the rest are usable at their defaults.
-
+`surv_learner_registry()` lists the native engines — `coxph` (Cox proportional
+hazards through `survival::coxph`) and `kaplan` (the covariate-free
+Kaplan-Meier baseline) — with their labels and tuning spaces. Advanced users
+can register their own mlr3 survival learners with `surv_register_learner()`;
+that path needs the GitHub-only `mlr3proba` package.
 
 ## What it deliberately does not do
 
@@ -117,23 +117,23 @@ curated alias and search space; the rest are usable at their defaults.
   framework for the "does a new marker add value" question, not for reporting
   one model.
 * **D-calibration and IPCW log-loss.** Rarely reported in prediction papers;
-  they can be borrowed from `mlr3proba`'s measure set if a reviewer asks.
-* **Distribution composition.** `mlr3proba`'s `PipeOpDistrCompositor` can bolt a
-  full survival distribution onto a risk-only model; that changes what "the
-  model's Brier score" means, so it stays an opt-in design decision.
-* **Subgroup analyses.** Which subgroups matter is a clinical decision, not a
+  they can be computed directly if a reviewer asks.
+* **Distribution composition.** A risk-only learner can be handed a full
+  survival distribution by borrowing a baseline from another learner; that
+  changes what "the model's Brier score" means, so it stays an opt-in design
+  decision.
   statistical default. You get a saved model and a scorer instead of invented
   groups.
 * **Tuning on the Brier score.** Its inverse-probability weights depend on the
   censoring distribution of the training data, so tuning on it would compare
   numbers computed on different data. Tuning uses the concordance index.
-* **`surv.rpart` and other risk-only learners** are supported, but they report a
-  C-index and Uno's C and nothing else. The package says so in
-  `result$meta$notes` instead of filling in a number it cannot compute.
-
+  concordance index.
+* **Registered risk-only learners** report a C-index and Uno's C and nothing
+  else. The package says so in `result$meta$notes` instead of filling in a
+  number it cannot compute.
 ## Installation
 
-`unimlsurv` is on GitHub only, because `mlr3proba` is not on CRAN.
+## Installation
 
 ```r
 # install.packages("remotes")

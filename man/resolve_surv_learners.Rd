@@ -4,13 +4,14 @@
 \alias{resolve_surv_learners}
 \title{Resolve survival learners into a workflow-ready list}
 \usage{
-resolve_surv_learners(learners = c("coxph", "rpart"), tune = TRUE)
+resolve_surv_learners(learners = c("coxph", "kaplan"), tune = TRUE)
 }
 \arguments{
 \item{learners}{Learner keys from \code{\link[=surv_learner_registry]{surv_learner_registry()}}, or a named list
-of \code{mlr3} survival learners.}
+of learners: native entries built by the registry, or foreign \code{mlr3}
+survival learners (the advanced path that needs \code{mlr3proba}).}
 
-\item{tune}{Whether to build a tuning search space.}
+\item{tune}{Whether to attach a tuning parameter space.}
 }
 \value{
 A named list of learner specifications, each with \code{key}, \code{learner},

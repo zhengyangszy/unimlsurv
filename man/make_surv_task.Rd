@@ -2,7 +2,7 @@
 % Please edit documentation in R/task.R
 \name{make_surv_task}
 \alias{make_surv_task}
-\title{Build an mlr3 survival task}
+\title{Build a native survival task}
 \usage{
 make_surv_task(data, spec)
 }
@@ -12,16 +12,20 @@ make_surv_task(data, spec)
 \item{spec}{A specification created by \code{\link[=surv_spec]{surv_spec()}}.}
 }
 \value{
-An \code{mlr3proba::TaskSurv} with the id \code{"unimlsurv_task"}.
+A native task with class \code{unimlsurv_task}.
 }
 \description{
-Build an mlr3 survival task
+A native task is a lightweight list with class \code{unimlsurv_task}: the data
+frame (features plus the time and status columns), the column names, and the
+row/event counts. The workflow engine treats tasks opaquely and hands them
+back to the adapter's train and predict hooks, so nothing outside this
+package needs to know the internals.
 }
 \examples{
 data <- sim_surv_data(n = 60, seed = 1)
 spec <- surv_spec(time = "time", status = "status")
 task <- make_surv_task(data, spec)
-task$nrow
+task$n
 }
 \references{
 Sonabend R, Kirchner P, Bender A, et al. (2021). mlr3proba: an R package for

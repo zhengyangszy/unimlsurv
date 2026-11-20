@@ -4,7 +4,7 @@
 
 [![R-CMD-check](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/zhengyangszy/unimlsurv/actions/workflows/R-CMD-check.yaml)
 
-用 `mlr3` 做生存分析，结构和 [`uniml`](https://github.com/zhengyangszy/uniml) 完全一致。
+生存分析，结构与 [`uniml`](https://github.com/zhengyangszy/uniml) 完全一致，原生引擎（`survival`、`rpart`）、依赖全部来自 CRAN。
 
 ## 安装
 
@@ -16,7 +16,7 @@ install.packages("uniml")                             # CRAN
 remotes::install_github("zhengyangszy/unimlsurv")     # GitHub
 ```
 
-`unimlsurv` 目前只发 GitHub，因为它的依赖 `mlr3proba` 不在 CRAN 上。
+unimlsurv 目前发 GitHub（CRAN 提交审核中）；Imports 里的依赖全部可从 CRAN 安装。
 
 `unimlsurv` 是 `uniml` 的生存分析版本。分层（规格、数据、任务、学习器、调参、指标、
 绘图、工作流）和对象都一样，会用一个就会用另一个。变的是结局，以及因此变化的
@@ -24,12 +24,12 @@ remotes::install_github("zhengyangszy/unimlsurv")     # GitHub
 
 ```r
 library(unimlsurv)
-library(mlr3)
+
 
 data <- sim_surv_data(n = 400, seed = 2026)
 
 spec <- surv_spec(time = "time", status = "status", time_points = c(3, 6, 12))
-spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
+spec <- surv_set_learners(spec, c("coxph", "kaplan"), tune = FALSE)
 
 set.seed(1)
 index <- sample.int(nrow(data))
@@ -95,12 +95,12 @@ restored <- uniml::read_result(path)
 scored <- predict_surv(restored, older_patients)
 ```
 
-## mlr3 有的生存学习器全都在
+## 原生生存引擎
 
-`surv_learner_registry()` 列出已安装 mlr3 包暴露的全部 29 个 `surv.*` 学习器：
-别名、能否输出生存概率、有没有内置调参空间。12 个有内置别名与搜索空间，其余
-按默认参数可用。
-
+`surv_learner_registry()` 列出原生引擎——`coxph`（经 `survival::coxph` 的 Cox
+比例风险）与 `kaplan`（无协变量 Kaplan-Meier 基线）——含各自的调参空间。高级
+用户可用 `surv_register_learner()` 注册自己的 mlr3 生存学习器；该路径需要
+GitHub 上的 `mlr3proba` 包。
 
 ## 刻意不做的
 
@@ -109,20 +109,20 @@ scored <- predict_surv(restored, older_patients)
 * **NRI（净重分类改善）**。Steyerberg 框架把它留给"新标志物是否增值"的问题，
   不是单个模型的常规报告。
 * **D-calibration 与 IPCW log-loss**。预测模型论文里罕见；审稿人若要求，可以借
-  `mlr3proba` 的度量集。
-* **分布组合**。`mlr3proba` 的 `PipeOpDistrCompositor` 能把完整生存分布"装"到
-  纯风险分模型上；这会改变"该模型的 Brier"的含义，所以保持为可另行选择的设计
+  直接算。
+* **分布组合**。给纯风险分模型借另一个学习器的基线"装"上完整生存分布；这会
+  改变"该模型的 Brier"的含义，所以保持为可另行选择的设计决定。
   决定。
 * **亚组分析。**哪些亚组重要是临床判断，不是统计默认。给你的是存档模型和打分器，
   不是替你发明的分组。
 * **用 Brier 调参。**其反删失权重取决于训练数据的删失分布，用它调参会拿不同口径
   的数互相比。调参用 C 指数。
-* **`surv.rpart` 等纯风险分学习器**受支持，但只报 C 指数和 Uno C。包把这个写进
+  C 指数。
+* **注册的纯风险分学习器**只报 C 指数和 Uno C。包把这个写进
   `result$meta$notes`，而不是填一个算不出来的数。
-
 ## 安装
 
-`unimlsurv` 只在 GitHub，因为 `mlr3proba` 不在 CRAN。
+## 安装
 
 ```r
 # install.packages("remotes")

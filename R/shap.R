@@ -97,7 +97,9 @@ surv_shap <- function(result, newdata, model = "best", time_point = NULL,
     ))
   }
   entry <- models[[model]]
-  if (!"distr" %in% entry$learner$predict_types && !is.null(time_point)) {
+  native_fitted <- inherits(entry$learner, "unimlsurv_fitted")
+  if (!native_fitted && !"distr" %in% entry$learner$predict_types &&
+      !is.null(time_point)) {
     .abort(sprintf(
       "Model \"%s\" cannot predict survival probabilities, so only the risk score can be explained; leave `time_point` NULL.",
       model
@@ -145,6 +147,16 @@ surv_shap <- function(result, newdata, model = "best", time_point = NULL,
 
   prediction_function <- function(object, X) {
     features <- as.data.frame(X, check.names = FALSE)
+    if (inherits(object, "unimlsurv_fitted")) {
+      # Native engines predict from the features alone; the outcome columns are
+      # never part of the explanation.
+      if (is.null(time_point)) {
+        predicted <- predict_surv_learner(object, features, block$time_points)
+        return(as.numeric(predicted$risk))
+      }
+      predicted_at <- predict_surv_learner(object, features, time_point)
+      return(as.numeric(predicted_at$survival[, 1L]))
+    }
     # Kernel SHAP calls the prediction function on the background rows too, so the
     # outcome columns cannot be the explained patients' own. A survival learner's
     # prediction is a function of the features only, so a placeholder of the right
@@ -260,7 +272,11 @@ surv_shap <- function(result, newdata, model = "best", time_point = NULL,
       block$time, block$status
     )), drop = FALSE]
   )
-  required <- entry$task$feature_names
+  required <- if (inherits(entry$task, "unimlsurv_task")) {
+    entry$task$features
+  } else {
+    entry$task$feature_names
+  }
   missing_columns <- setdiff(required, names(transformed))
   if (length(missing_columns) > 0L) {
     .abort(sprintf(

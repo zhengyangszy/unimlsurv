@@ -7,24 +7,28 @@
 train_surv(task, learner, params = NULL)
 }
 \arguments{
-\item{task}{An \code{mlr3proba::TaskSurv}.}
+\item{task}{A native task from \code{\link[=make_surv_task]{make_surv_task()}}.}
 
-\item{learner}{An \code{mlr3} survival learner.}
+\item{learner}{A native learner from the registry, or a foreign mlr3 learner.}
 
 \item{params}{Optional named list of hyperparameters applied before training.}
 }
 \value{
-The trained \code{Learner}.
+A fitted native learner (class \code{unimlsurv_fitted}) or the trained
+mlr3 learner.
 }
 \description{
-Fit and predict a survival learner
+Native learners fit \code{survival::coxph}, a Kaplan-Meier baseline, or
+\code{rpart(method = "exp")} directly. Foreign mlr3 learners (registered through
+\code{\link[=surv_register_learner]{surv_register_learner()}}) are trained through the mlr3 stack, which needs
+\code{mlr3proba}.
 }
 \examples{
 data <- sim_surv_data(n = 80, seed = 3)
 spec <- surv_spec(time = "time", status = "status")
 task <- make_surv_task(data, spec)
-trained <- train_surv(task, mlr3::lrn("surv.coxph"))
-trained$predict(task)$predict_types
+trained <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
+trained$engine
 }
 \references{
 Bender A, Groll A, Scheipl F (2018). A general machine learning framework for

@@ -84,14 +84,15 @@ spec <- surv_spec(
   time_points = time_points
 )
 spec <- uniml::set_preprocess(spec, impute = "median_mode", scale = "zscore")
-spec <- surv_set_learners(spec, c("coxph", "rpart"), tune = FALSE)
+spec <- surv_set_learners(spec, c("coxph", "kaplan"), tune = FALSE)
 spec
 ```
 
-`rpart` is here on purpose: it predicts only a risk score, not a full survival
-distribution, and the package's answer to that is a *documented* limitation
-rather than a made-up number. `surv_learner_registry()` lists every `surv.*`
-learner the installed mlr3 packages expose.
+`kaplan` is here on purpose: it is the covariate-free baseline, the model
+that must score exactly 0.5 on the concordance index — the built-in sanity
+check every survival comparison deserves. `surv_learner_registry()` lists
+every native engine; advanced users can register mlr3 learners with
+`surv_register_learner()`.
 
 ## Data and task
 
@@ -110,9 +111,8 @@ and those are imputed during preprocessing, on the training data only.
 ## The metrics, one at a time
 
 ```{r metrics}
-learner <- mlr3::lrn("surv.coxph")
-fitted <- train_surv(task, learner)
-prediction <- fitted$predict(task)
+fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
+prediction <- predict_surv_learner(fitted, prepared$data, time_points)
 
 survival <- survival_matrix(prediction, time_points)
 risk <- survival_risk(prediction)
@@ -136,7 +136,7 @@ Read the table like this:
   estimated on the **training** data and truncates at `tau`. Report Harrell's C
   and Uno's C side by side; when they disagree, the disagreement is about the
   censoring, not about the model. Both need only a risk score, which is why the
-  risk-only model `rpart` gets them and nothing else.
+engines that only output a risk score (a registered foreign learner) would get them and nothing else.
 * `brier(t)` is the inverse-probability-of-censoring weighted mean squared
   difference between the predicted survival probability and what happened.
   Lower is better.
@@ -255,10 +255,10 @@ result$metrics[, c("model", "set", "cindex", "uno_c", "ibs", "iauc",
 result$ranking
 ```
 
-`rpart` reports a C-index and Uno's C and nothing else. That is not a bug:
-`surv.rpart` can only produce a risk score, so it cannot be asked for a Brier
-score. The package says so in `result$meta$notes` instead of quietly filling in
-a number.
+A registered foreign learner that outputs only a risk score reports a C-index
+and Uno's C and nothing else. That is not a bug: such a learner cannot be
+asked for a Brier score. The package says so in `result$meta$notes` instead
+of quietly filling in a number.
 
 ```{r notes}
 result$meta$notes
@@ -343,7 +343,7 @@ newdata <- data[index[341:350], ]
 predict_surv(result, newdata, model = "coxph")
 ```
 
-`model = "best"` would pick whatever ranks first, and here that is `rpart`,
+A registered risk-only learner would be rejected here: the error names the
 which cannot produce survival probabilities. The error names the models that
 can, which is more useful than silently switching to a different model than
 you asked for.
@@ -365,11 +365,13 @@ probabilities, and whether it has a curated tuning search space.
 
 ```{r registry}
 available <- surv_learner_registry(available_only = TRUE)
-available[, c("key", "mlr3_key", "distr", "tunable")]
+available[, c("key", "engine", "distr", "tunable")]
 ```
 
-A learner without a curated space is still usable, just fitted at its defaults;
-`surv_register_learner()` adds a search space when you want to tune it.
+The native registry ships coxph and kaplan; surv_register_learner() adds
+whatever else you want — another native engine with different defaults, or a
+foreign mlr3 survival learner (the advanced path that needs the GitHub-only
+mlr3proba package).
 
 ## What is deliberately missing
 
@@ -380,11 +382,12 @@ A learner without a curated space is still usable, just fitted at its defaults;
   data; the Steyerberg framework reserves it for the "does a new marker add
   value on top of an established model" question, not for reporting one model.
 * **D-calibration and IPCW log-loss.** Rarely reported in prediction papers;
-  both can be borrowed from `mlr3proba`'s measure set if a reviewer asks.
-* **Distribution composition.** `mlr3proba`'s `PipeOpDistrCompositor` can bolt
-  a full survival distribution onto a risk-only model by borrowing a baseline
-  from another learner. That changes what "the model's Brier score" means, so
-  it is a separate, opt-in design decision rather than a default here.
+  both can be computed directly if a reviewer asks.
+* **Distribution composition.** A risk-only learner can be handed a full
+  survival distribution by borrowing a baseline from another learner — a
+  trick mlr3proba's PipeOpDistrCompositor automates. That changes what "the
+  model's Brier score" means, so it is a separate, opt-in design decision
+  rather than a default here.
 * **Tuning on the Brier score.** The inverse-probability weights depend on the
   censoring distribution of the data the model was fitted on, so tuning models
   on it would compare numbers computed on different data. Tuning uses the

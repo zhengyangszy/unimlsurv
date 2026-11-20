@@ -98,11 +98,12 @@ test_that("a risk-only model can only be explained on the risk score", {
   skip_if_not_installed("kernelshap")
   skip_if_not_installed("shapviz")
   skip_if_not_installed("rpart")
+  skip_if_not_installed("mlr3proba")
   set.seed(52)
   data <- sim_surv_data(n = 160, seed = 52)
   index <- sample.int(nrow(data))
   spec <- surv_spec(time = "time", status = "status", time_points = 12)
-  spec <- surv_set_learners(spec, "rpart", tune = FALSE)
+  spec <- surv_register_learner(spec, "rpart", mlr3::lrn("surv.rpart"))
   spec <- surv_set_tuning(spec, folds = 2L, evals = 1L)
   result <- run_surv_workflow(
     spec,

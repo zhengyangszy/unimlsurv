@@ -11,19 +11,23 @@ surv_register_learner(spec, key, learner, search_space = NULL)
 
 \item{key}{A short learner key.}
 
-\item{learner}{An \code{mlr3} survival learner.}
+\item{learner}{A native learner from \code{\link[=surv_learner_registry]{surv_learner_registry()}}, or an \code{mlr3}
+survival learner.}
 
-\item{search_space}{Optional \link[paradox:ParamSet]{paradox::ParamSet} used for tuning.}
+\item{search_space}{Optional parameter space. For foreign mlr3 learners this
+is a \link[paradox:ParamSet]{paradox::ParamSet}; native learners take the package's own plain-list
+format (see \code{\link[=surv_learner_registry]{surv_learner_registry()}}).}
 }
 \value{
 The updated specification.
 }
 \description{
-Use this when you want a learner that is not in the registry, or when you want
-a search space for one of the discovered learners that ships without one.
+Use this to add a learner the registry does not ship: a native engine with
+custom defaults, or a foreign \code{mlr3} survival learner. The foreign path is
+advanced: training it needs the \code{mlr3proba} package, which is not on CRAN.
 }
 \examples{
 spec <- surv_spec(time = "time", status = "status")
-spec <- surv_register_learner(spec, "mycox", mlr3::lrn("surv.coxph"))
+spec <- surv_register_learner(spec, "mycox", resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
 names(spec$survival$learners)
 }

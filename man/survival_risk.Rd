@@ -7,19 +7,20 @@
 survival_risk(prediction)
 }
 \arguments{
-\item{prediction}{An \code{mlr3proba::PredictionSurv}.}
+\item{prediction}{A native prediction from \code{\link[=predict_surv_learner]{predict_surv_learner()}}, or an
+mlr3 \code{PredictionSurv} (foreign learners).}
 }
 \value{
 A numeric vector.
 }
 \description{
 The risk score is the quantity a concordance index ranks: a higher value means
-a shorter expected survival. \code{mlr3proba} exposes it as \code{crank}, and falls back
-to the linear predictor when \code{crank} is absent.
+a shorter expected survival.
 }
 \examples{
 data <- sim_surv_data(n = 60, seed = 1)
 spec <- surv_spec(time = "time", status = "status")
 task <- make_surv_task(data, spec)
-head(survival_risk(mlr3::lrn("surv.coxph")$train(task)$predict(task)))
+fitted <- train_surv(task, resolve_surv_learners("coxph", tune = FALSE)$coxph$learner)
+head(survival_risk(predict_surv_learner(fitted, data, c(12, 36, 60))))
 }

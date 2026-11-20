@@ -8,20 +8,20 @@ surv_learner_registry(available_only = FALSE, curated_only = FALSE)
 }
 \arguments{
 \item{available_only}{Whether to keep only the learners that can be built in
-this session.}
+this session. Native engines always can; this exists for call compatibility.}
 
 \item{curated_only}{Whether to keep only the curated entries.}
 }
 \value{
-A data frame with \code{key}, \code{label}, \code{mlr3_key}, \code{package}, \code{available},
+A data frame with \code{key}, \code{label}, \code{engine}, \code{package}, \code{available},
 \code{distr}, and \code{tunable}.
 }
 \description{
-Everything \code{mlr3} exposes as a \verb{surv.*} learner, with a short alias you can pass
-to \code{\link[=surv_set_learners]{surv_set_learners()}}. The first block is curated: it has a readable label
-and a tuning search space. The rest is discovered at run time and is fitted at
-its defaults unless you register a search space with
-\code{\link[=surv_register_learner]{surv_register_learner()}}.
+The native engines this package ships, with a short alias you can pass to
+\code{\link[=surv_set_learners]{surv_set_learners()}}. Each one has a readable label and, where meaningful, a
+tuning parameter space in the package's own format. Users of the \code{mlr3}
+ecosystem can add their own survival learners with \code{\link[=surv_register_learner]{surv_register_learner()}};
+those require the \code{mlr3proba} package, which is not on CRAN.
 }
 \details{
 \code{distr} tells you whether the learner can produce survival probabilities. A
@@ -30,8 +30,7 @@ concordance index and nothing else.
 }
 \examples{
 registry <- surv_learner_registry()
-sum(registry$available)
-subset(registry, distr, select = c(key, mlr3_key))[1:5, ]
+registry[, c("key", "label", "engine", "tunable")]
 }
 \references{
 Sonabend R, Kirchner P, Bender A, et al. (2021). mlr3proba: an R package for
