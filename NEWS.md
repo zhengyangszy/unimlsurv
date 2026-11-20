@@ -1,3 +1,34 @@
+# unimlsurv 0.5.0
+
+## Native survival engines; CRAN-ready dependencies
+
+The package no longer imports `mlr3proba` or `mlr3extralearners`, which are
+not on CRAN. Every dependency in `Imports` now installs from CRAN, so this
+version can be submitted to CRAN.
+
+* `make_surv_task()`, `train_surv()`, `survival_matrix()`, and
+  `survival_risk()` now work with a lightweight native task class and native
+  learner objects instead of `mlr3` survival classes. The reported values
+  (risk vector, survival matrix with `t<point>` column names) keep their
+  shapes, so metrics, plots, calibration, decision curves, and nomograms
+  work as before.
+* Native learners in 0.5.0: `coxph` (`survival::coxph`, survival probabilities
+  through `survival::survfit`), `kaplan` (a Kaplan-Meier baseline with no
+  covariates), and `rpart` (`rpart(method = "exp")`, discrimination use).
+* Tuning no longer uses `mlr3tuning`: `tune_surv()` runs its own repeated
+  cross-validated grid or random search and scores candidate settings with the
+  package's own concordance index on pooled out-of-fold risk predictions.
+* `surv_register_learner()` keeps working: registering an `mlr3` survival
+  learner still trains and predicts through the `mlr3` stack, which now
+  requires `mlr3proba` to be installed (it moved to `Suggests`). Registering
+  is therefore an advanced path, documented as such.
+* The curated registry drops the entries that relied on `mlr3extralearners`
+  (`cb`, `rfsrc`, `aorsf`, `cforest`, `gamboost`, `survdnn`, and the dynamic
+  discovery of every `surv.*` key). `ranger`, `glmnet`, and `xgboost`
+  wrappers are planned for a later version; until then they are not offered.
+* Breaking: functions that documented `mlr3proba::TaskSurv` or
+  `mlr3proba::PredictionSurv` parameters now document the native classes.
+
 # unimlsurv 0.4.0
 
 ## Nomogram for Cox models
